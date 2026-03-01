@@ -56,7 +56,7 @@ def is_task_expired(task_created_at: float, ttl: int) -> bool:
     return (time.time() - task_created_at) > ttl
 
 
-@huey.task(expires=TASK_TTL["publish"])
+@huey.task(expires=TASK_TTL["publish"], queue="fast")
 def publish_note_task(title: str, content: str, image_paths: list = None, 
                       tags: list = None, topic: str = None) -> Dict[str, Any]:
     """
@@ -74,14 +74,36 @@ def publish_note_task(title: str, content: str, image_paths: list = None,
     """
     from ..xhs_api_client import XHSClient
     from ..database import get_database
+    from ..utils.task_state_machine import get_post_state_machine
     
     logger.info(f"开始发布笔记: {title}")
     db = get_database()
+    sm = get_post_state_machine()
     
     try:
-        client = XHSClient()
+        # 1. 先添加待发布的 post 记录 (pending 状态)
+        post_id = db.add_post(
+            title=title,
+            content=content,
+            image_path=",".join(image_paths) if image_paths else None,
+            tags=tags,
+            topic=topic,
+            status="pending"
+        )
         
-        # 调用发布 API
+        # 2. 尝试抢占任务 (乐观锁 + TTL 防死锁)
+        claim_result = sm.claim_post(post_id, timeout_minutes=15)
+        
+        if not claim_result.success:
+            logger.warning(f"无法抢占发布任务: post_id={post_id}, reason={claim_result.reason}")
+            return {
+                "status": "failure", 
+                "error": f"task_already_{claim_result.reason}",
+                "post_id": post_id
+            }
+        
+        # 3. 抢占成功，执行发布
+        client = XHSClient()
         result = client.publish_note(
             title=title,
             content=content,
@@ -91,29 +113,29 @@ def publish_note_task(title: str, content: str, image_paths: list = None,
         )
         
         if result.get("success"):
-            post_id = result.get("post_id")
-            db.add_post(
-                title=title,
-                content=content,
-                image_path=",".join(image_paths) if image_paths else None,
-                tags=tags,
-                topic=topic,
-                post_id=post_id,
-                status="success"
-            )
-            logger.info(f"笔记发布成功: {post_id}")
-            return {"status": "success", "post_id": post_id}
+            xhs_post_id = result.get("post_id")
+            db.update_post_status(post_id, "success", xhs_post_id)
+            sm.complete_post(post_id)
+            logger.info(f"笔记发布成功: {xhs_post_id}")
+            return {"status": "success", "post_id": xhs_post_id}
         else:
-            db.add_post(title=title, content=content, status="failure")
-            return {"status": "failure", "error": result.get("error")}
+            error_msg = result.get("error", "unknown")
+            db.update_post_status(post_id, "failed")
+            sm.fail_post(post_id, error_msg)
+            return {"status": "failure", "error": error_msg}
             
     except Exception as e:
         logger.error(f"发布笔记失败: {e}")
-        db.add_post(title=title, content=content, status="failure")
+        try:
+            if 'post_id' in locals():
+                sm.fail_post(post_id, str(e))
+                db.update_post_status(post_id, "failed")
+        except:
+            pass
         return {"status": "failure", "error": str(e)}
 
 
-@huey.task(expires=TASK_TTL["interact"])
+@huey.task(expires=TASK_TTL["interact"], queue="fast")
 def auto_interact_task(keywords: list = None, max_likes: int = 10, 
                        max_comments: int = 5, max_collects: int = 5) -> Dict[str, Any]:
     """
@@ -149,7 +171,7 @@ def auto_interact_task(keywords: list = None, max_likes: int = 10,
         return {"status": "failure", "error": str(e)}
 
 
-@huey.task(expires=TASK_TTL["trending"])
+@huey.task(expires=TASK_TTL["trending"], queue="normal")
 def fetch_trending_task(platforms: list = None) -> Dict[str, Any]:
     """
     获取热搜任务
@@ -174,7 +196,7 @@ def fetch_trending_task(platforms: list = None) -> Dict[str, Any]:
         return {"status": "failure", "error": str(e)}
 
 
-@huey.task(expires=TASK_TTL["analyze"])
+@huey.task(expires=TASK_TTL["analyze"], queue="normal")
 def analyze_post_task(post_id: str) -> Dict[str, Any]:
     """
     分析帖子数据任务
@@ -213,7 +235,7 @@ def analyze_post_task(post_id: str) -> Dict[str, Any]:
         return {"status": "failure", "error": str(e)}
 
 
-@huey.task(expires=TASK_TTL["cleanup"])
+@huey.task(expires=TASK_TTL["cleanup"], queue="normal")
 def cleanup_task(retention_days: int = 30) -> Dict[str, Any]:
     """
     清理任务 - 扩展版
@@ -368,7 +390,7 @@ def cleanup_cache_files(cache_dir: str) -> Dict:
     return {"count": count, "size": freed_size}
 
 
-@huey.task(expires=3600)
+@huey.task(expires=3600, queue="normal")
 def db_maintenance_task() -> Dict[str, Any]:
     """
     数据库维护任务 - 每周执行

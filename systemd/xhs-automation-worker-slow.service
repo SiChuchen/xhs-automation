@@ -1,0 +1,18 @@
+[Unit]
+Description=XHS Automation - Slow Worker (Image Generation)
+After=network.target xhs-automation-main.service
+Requires=xhs-automation-main.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/xhs-automation
+ExecStart=/home/ubuntu/xhs-automation/venv/bin/huey_consumer.py src.queue.huey_config.huey -q slow -w 1
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/ubuntu/xhs-automation/logs/worker-slow.log
+StandardError=append:/home/ubuntu/xhs-automation/logs/worker-slow.log
+Environment="PYTHONPATH=/home/ubuntu/xhs-automation"
+
+[Install]
+WantedBy=multi-user.target

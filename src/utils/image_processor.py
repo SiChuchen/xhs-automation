@@ -433,3 +433,130 @@ def process_anti_fingerprint(input_path: str, output_path: str = None) -> str:
     """便捷函数: 抗指纹处理"""
     processor = ImageAntiFingerprint()
     return processor.process(input_path, output_path)
+
+
+def verify_image(path: str) -> tuple[bool, str]:
+    """
+    校验图片完整性
+    
+    Args:
+        path: 图片路径
+    
+    Returns:
+        (is_valid, error_message)
+    """
+    if not os.path.exists(path):
+        return False, "file_not_found"
+    
+    try:
+        with Image.open(path) as img:
+            img.verify()
+        return True, "ok"
+    except Exception as e:
+        logger.warning(f"图片校验失败: {path}, error: {e}")
+        return False, str(e)
+
+
+def crop_to_34_ratio(img: Image.Image) -> Image.Image:
+    """
+    居中裁剪为 3:4 比例
+    
+    Args:
+        img: PIL Image 对象
+    
+    Returns:
+        裁剪后的 Image 对象
+    """
+    width, height = img.size
+    target_ratio = 3 / 4
+    
+    current_ratio = width / height
+    
+    if abs(current_ratio - target_ratio) < 0.01:
+        return img
+    
+    if current_ratio > target_ratio:
+        new_width = int(height * target_ratio)
+        left = (width - new_width) // 2
+        img = img.crop((left, 0, left + new_width, height))
+    else:
+        new_height = int(width / target_ratio)
+        top = (height - new_height) // 2
+        img = img.crop((0, top, width, top + new_height))
+    
+    return img
+
+
+def adaptive_compress(img: Image.Image, max_size_kb: int = 1024) -> Image.Image:
+    """
+    自适应压缩图片
+    
+    Args:
+        img: PIL Image 对象
+        max_size_kb: 最大文件大小 (KB)
+    
+    Returns:
+        压缩后的 Image 对象
+    """
+    import io
+    
+    max_bytes = max_size_kb * 1024
+    quality = 95
+    
+    while quality > 50:
+        buffer = io.BytesIO()
+        img.save(buffer, format='JPEG', quality=quality, optimize=True)
+        if len(buffer.getvalue()) <= max_bytes:
+            break
+        quality -= 5
+    
+    return img
+
+
+def process_and_verify_image(
+    input_path: str,
+    output_path: str = None,
+    target_size: tuple = (1080, 1440),
+    max_size_kb: int = 1024
+) -> tuple[bool, str]:
+    """
+    综合处理图片: 校验 + 3:4裁剪 + 压缩
+    
+    Args:
+        input_path: 输入图片路径
+        output_path: 输出路径 (默认覆盖原图)
+        target_size: 目标尺寸 (默认 1080x1440)
+        max_size_kb: 最大文件大小 (KB)
+    
+    Returns:
+        (success, message)
+    """
+    if output_path is None:
+        output_path = input_path
+    
+    try:
+        is_valid, error = verify_image(input_path)
+        if not is_valid:
+            return False, f"verify_failed: {error}"
+        
+        with Image.open(input_path) as img:
+            if img.mode in ("RGBA", "P"):
+                img = img.convert("RGB")
+            
+            img = crop_to_34_ratio(img)
+            
+            if img.size != target_size:
+                img = img.resize(target_size, Image.LANCZOS)
+            
+            img = adaptive_compress(img, max_size_kb)
+            
+            os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+            img.save(output_path, format='JPEG', quality=85, optimize=True)
+        
+        final_size = os.path.getsize(output_path) / 1024
+        logger.info(f"图片处理完成: {output_path}, size={final_size:.1f}KB")
+        return True, f"ok, size={final_size:.1f}KB"
+    
+    except Exception as e:
+        logger.error(f"图片处理失败: {input_path}, error: {e}")
+        return False, str(e)

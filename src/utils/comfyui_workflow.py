@@ -232,6 +232,57 @@ class ComfyUIWorkflow:
             logger.error(f"下载图片失败: {e}")
             raise
     
+    def download_and_process_image(
+        self, 
+        node_id: str, 
+        output_path: str, 
+        prompt_id: str = None,
+        process: bool = True,
+        target_size: tuple = (1080, 1440),
+        max_size_kb: int = 1024
+    ) -> tuple[bool, str]:
+        """
+        下载并处理图片 (整合校验+裁剪+压缩)
+        
+        Args:
+            node_id: 节点ID
+            output_path: 输出路径
+            prompt_id: 提示ID
+            process: 是否处理图片
+            target_size: 目标尺寸
+            max_size_kb: 最大文件大小
+        
+        Returns:
+            (success, message)
+        """
+        from .image_processor import process_and_verify_image
+        
+        temp_path = output_path + ".tmp"
+        
+        try:
+            self.download_image(node_id, temp_path, prompt_id)
+            
+            if process:
+                success, msg = process_and_verify_image(
+                    temp_path,
+                    output_path,
+                    target_size=target_size,
+                    max_size_kb=max_size_kb
+                )
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                return success, msg
+            else:
+                if temp_path != output_path:
+                    os.rename(temp_path, output_path)
+                return True, "ok"
+                
+        except Exception as e:
+            logger.error(f"下载并处理图片失败: {e}")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return False, str(e)
+    
     def wait_for_completion(self, prompt_id: str = None, timeout: int = 300, interval: int = 2) -> bool:
         """等待工作流完成"""
         import time

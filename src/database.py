@@ -1,17 +1,51 @@
 """
 小红书自动化运营 - 数据库模块
-使用 SQLite 轻量级数据库
+使用 SQLite WAL 模式支持并发
 """
 
 import sqlite3
 import json
 import os
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from contextlib import contextmanager
+from queue import Queue, Empty
 
 logger = logging.getLogger(__name__)
+
+
+class ConnectionPool:
+    """SQLite 连接池 (简化版，适用于 WAL 模式)"""
+    
+    def __init__(self, db_path: str, max_connections: int = 5):
+        self.db_path = db_path
+        self.max_connections = max_connections
+        self._local = threading.local()
+        self._lock = threading.Lock()
+    
+    def _create_connection(self) -> sqlite3.Connection:
+        """创建新连接"""
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA cache_size=-64000")
+        conn.execute("PRAGMA busy_timeout=30000")
+        return conn
+    
+    def get_connection(self) -> sqlite3.Connection:
+        """获取连接"""
+        if not hasattr(self._local, 'conn') or self._local.conn is None:
+            self._local.conn = self._create_connection()
+        return self._local.conn
+    
+    def close_all(self):
+        """关闭所有连接"""
+        if hasattr(self._local, 'conn') and self._local.conn:
+            self._local.conn.close()
+            self._local.conn = None
 
 
 class XHSDatabase:
@@ -20,7 +54,9 @@ class XHSDatabase:
     def __init__(self, db_path: str = "data/xhs_data.db"):
         self.db_path = db_path
         self._ensure_db_dir()
+        self._pool = ConnectionPool(db_path)
         self._init_database()
+        logger.info(f"数据库初始化完成 (WAL模式): {db_path}")
     
     def _ensure_db_dir(self):
         """确保数据库目录存在"""
@@ -31,8 +67,7 @@ class XHSDatabase:
     @contextmanager
     def _get_connection(self):
         """获取数据库连接上下文管理器"""
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
+        conn = self._pool.get_connection()
         try:
             yield conn
             conn.commit()
@@ -40,8 +75,6 @@ class XHSDatabase:
             conn.rollback()
             logger.error(f"数据库操作失败: {e}")
             raise
-        finally:
-            conn.close()
     
     def _init_database(self):
         """初始化数据库表结构"""
@@ -110,6 +143,26 @@ class XHSDatabase:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_interactions_keyword ON interactions(target_keyword)")
             
             logger.info("数据库初始化完成")
+    
+    def get_wal_status(self) -> Dict:
+        """获取 WAL 模式状态"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA journal_mode")
+            journal_mode = cursor.fetchone()[0]
+            cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            checkpoint = cursor.fetchone()
+            return {
+                "journal_mode": journal_mode,
+                "wal_size": os.path.getsize(self.db_path + "-wal") if os.path.exists(self.db_path + "-wal") else 0,
+                "shm_size": os.path.getsize(self.db_path + "-shm") if os.path.exists(self.db_path + "-shm") else 0,
+                "checkpoint": checkpoint
+            }
+    
+    def checkpoint(self):
+        """执行 WAL 检查点"""
+        with self._get_connection() as conn:
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
     
     # ==================== 发布记录操作 ====================
     
@@ -247,6 +300,14 @@ class XHSDatabase:
                 VALUES (?, ?, ?, ?, ?)
             """, (target_post_id, target_keyword, action, content, status))
             return cursor.lastrowid or 0
+    
+    def update_interaction_status(self, interaction_id: int, status: str):
+        """更新互动状态"""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE interactions SET status = ? WHERE id = ?
+            """, (status, interaction_id))
     
     def is_interacted(self, target_post_id: str, action: Optional[str] = None) -> bool:
         """检查是否已互动"""

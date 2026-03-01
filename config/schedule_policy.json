@@ -1,0 +1,60 @@
+{
+  "version": "1.0",
+  "description": "时间窗口调度策略配置",
+  "time_windows": [
+    {
+      "name": "night_prefill",
+      "description": "凌晨预填充 - 集中生图",
+      "start": "02:00",
+      "end": "06:00",
+      "slow_priority": 1,
+      "fast_priority": 10,
+      "action": "suspend_publish",
+      "enabled": true
+    },
+    {
+      "name": "daytime",
+      "description": "白天均衡模式",
+      "start": "06:00",
+      "end": "18:00",
+      "slow_priority": 5,
+      "fast_priority": 5,
+      "action": "balanced",
+      "enabled": true
+    },
+    {
+      "name": "evening_peak",
+      "description": "晚高峰 - 集中互动",
+      "start": "18:00",
+      "end": "22:00",
+      "slow_priority": 10,
+      "fast_priority": 1,
+      "action": "suspend_generation",
+      "enabled": true
+    },
+    {
+      "name": "late_night",
+      "description": "深夜低活跃",
+      "start": "22:00",
+      "end": "02:00",
+      "slow_priority": 8,
+      "fast_priority": 8,
+      "action": "balanced",
+      "enabled": true
+    }
+  ],
+  "queue_config": {
+    "fast": {
+      "max_concurrent": 3,
+      "timeout_seconds": 30
+    },
+    "normal": {
+      "max_concurrent": 2,
+      "timeout_seconds": 300
+    },
+    "slow": {
+      "max_concurrent": 1,
+      "timeout_seconds": 1800
+    }
+  }
+}

@@ -166,6 +166,8 @@ class AutoInteract:
         Returns:
             是否成功
         """
+        from .utils.task_state_machine import get_interaction_state_machine
+        
         post_id = post_info.get('id')
         xsec_token = post_info.get('xsec_token')
         
@@ -173,12 +175,29 @@ class AutoInteract:
             logger.warning("帖子信息不完整")
             return False
         
-        # 检查是否已互动
+        # 检查是否已互动 (快速检查)
         if self.db.is_interacted(post_id, action):
             logger.debug(f"帖子 {post_id} 已进行过 {action} 操作，跳过")
             return False
         
-        # 执行操作
+        # 尝试添加待处理的互动记录
+        interaction_id = self.db.add_interaction(
+            target_post_id=post_id,
+            target_keyword=post_info.get('keyword', ''),
+            action=action,
+            content=comment or '',
+            status='pending'
+        )
+        
+        # 使用乐观锁抢占任务
+        sm = get_interaction_state_machine()
+        claim_result = sm.claim_interaction(interaction_id, timeout_minutes=15)
+        
+        if not claim_result.success:
+            logger.debug(f"互动任务已被抢占: interaction_id={interaction_id}, reason={claim_result.reason}")
+            return False
+        
+        # 抢占成功，执行互动
         try:
             if action == 'like':
                 success = self.mcp_client.like_feed(post_id, xsec_token)
@@ -191,27 +210,26 @@ class AutoInteract:
                 result = {'success': success}
             else:
                 logger.warning(f"未知操作: {action}")
+                sm.fail_interaction(interaction_id, f"unknown_action_{action}")
                 return False
             
             # 记录结果
             status = 'success' if result.get('success') else 'failed'
-            self.db.add_interaction(
-                target_post_id=post_id,
-                target_keyword=post_info.get('keyword', ''),
-                action=action,
-                content=comment or '',
-                status=status
-            )
+            self.db.update_interaction_status(interaction_id, status)
             
             if result.get('success'):
+                sm.complete_interaction(interaction_id)
                 logger.info(f"{action} 帖子成功: {post_id}")
                 return True
             else:
-                logger.warning(f"{action} 帖子失败: {result.get('error')}")
+                error_msg = str(result.get('error', 'unknown'))
+                sm.fail_interaction(interaction_id, error_msg)
+                logger.warning(f"{action} 帖子失败: {error_msg}")
                 return False
                 
         except Exception as e:
             logger.error(f"互动操作异常: {e}")
+            sm.fail_interaction(interaction_id, str(e))
             return False
     
     def run_keyword_interaction(self, keyword: str, 
