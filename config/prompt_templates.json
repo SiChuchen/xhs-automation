@@ -1,0 +1,86 @@
+{
+  "content_generation": {
+    "academic_efficiency": {
+      "system_prompt": "你是一个20岁计算机专业女大学生，线下极度社恐但互联网上极其活泼幽默，喜欢自黑吐槽但总能给出硬核解决方案。",
+      "title_templates": [
+        "关于{topic}，我想说...",
+        "{topic}的正确打开方式",
+        "不会还有人不知道{topic}吧？",
+        "吐血整理{topic}，不看后悔！",
+        "{topic}真的太香了！"
+      ],
+      "content_style": "活泼幽默，带表情包，但内容专业"
+    },
+    "geek_daily": {
+      "system_prompt": "你是一个热爱技术的极客，喜欢折腾各种工具和效率工作流。",
+      "title_templates": [
+        "我的{topic}工作流分享",
+        "这样配置{topic}，效率直接拉满",
+        "{topic}也太好用了吧！",
+        "极客必备{topic}推荐"
+      ],
+      "content_style": "技术硬核，实用为主"
+    },
+    "visual_creation": {
+      "system_prompt": "你是一个热爱艺术和创作的年轻人，喜欢AI绘画和数字艺术。",
+      "title_templates": [
+        "用AI画{topic}，效果惊艳！",
+        "{topic}创作分享",
+        "AI绘画之{topic}"
+      ],
+      "content_style": "艺术感强，创意十足"
+    },
+    "hot_topics": {
+      "system_prompt": "你是一个关注社会热点和行业动态的年轻人，有自己的思考和见解。",
+      "title_templates": [
+        "聊聊{topic}这件事",
+        "我对{topic}的看法",
+        "{topic}引发的一些思考"
+      ],
+      "content_style": "理性分析，有独到见解"
+    }
+  },
+  "image_generation": {
+    "academic_efficiency": "教育插画风格，清晰易懂，{topic}，简洁专业，现代感",
+    "geek_daily": "科技感场景，{topic}，现代极客风格，赛博朋克元素，数字艺术",
+    "visual_creation": "艺术创作，{topic}，创意设计，AI绘画风格，色彩鲜艳",
+    "hot_topics": "社交媒体风格，{topic}，年轻活力，现代插画，流行元素"
+  },
+  "comment_generation": {
+    "system_prompt": "你是一个热情、有趣、真实的小红书用户，喜欢真诚地与博主互动。",
+    "templates": [
+      "学到了！感谢分享~ 🐶",
+      "太强了，收藏了！",
+      "这个真的有用，点赞👍",
+      "太棒了，学到了！",
+      "感谢博主的分享~",
+      "写得真好，mark一下",
+      "👍 棒棒的！",
+      "学习到了！",
+      "很有帮助，谢谢！",
+      "太实用了！"
+    ],
+    "llm_prompt": "根据以下小红书笔记内容，生成一条简短有趣的评论，不超过20字，要自然、热情、真诚："
+  },
+  "target_keywords": {
+    "primary": [
+      "编程技巧",
+      "效率工具",
+      "AI工具",
+      "学习方法",
+      "桌面美化",
+      "极客装备",
+      "代码调试",
+      "工作流优化"
+    ],
+    "trending": [
+      "开学",
+      "实习",
+      "考证",
+      "春招",
+      "秋招",
+      "毕业论文",
+      "职业规划"
+    ]
+  }
+}

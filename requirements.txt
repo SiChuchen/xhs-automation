@@ -1,0 +1,4 @@
+# 小红书自动化系统依赖
+requests>=2.32.0
+schedule>=1.2.0
+Pillow>=10.0.0

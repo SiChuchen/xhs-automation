@@ -1,0 +1,12 @@
+{
+  "daily_cost": 0.6000000000000001,
+  "monthly_cost": 0.6000000000000001,
+  "total_cost": 0.6000000000000001,
+  "images_generated": 3,
+  "last_reset_date": "2026-02-27",
+  "total_spent": 0,
+  "images_generated_today": 0,
+  "last_date": "",
+  "daily_budget": 2.0,
+  "max_images_per_day": 10
+}

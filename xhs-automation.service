@@ -1,0 +1,26 @@
+[Unit]
+Description=Xiaohongshu Automation Service
+After=network.target docker.service
+Requires=docker.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/path/to/xhs-automation
+Environment="PATH=/path/to/xhs-automation/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/path/to/xhs-automation/venv/bin/python scripts/xhs_automation.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xhs-automation
+
+# 环境变量设置
+Environment="PYTHONUNBUFFERED=1"
+Environment="TZ=Asia/Shanghai"
+
+[Install]
+WantedBy=multi-user.target

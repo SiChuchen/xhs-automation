@@ -1,0 +1,7 @@
+{
+  "database_path": "data/xhs_data.db",
+  "retention_days": 30,
+  "auto_cleanup": true,
+  "cleanup_interval_hours": 24,
+  "max_db_size_mb": 100
+}

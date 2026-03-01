@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "workflow_id": "your_workflow_id_here",
+  "workflow_json": "path/to/your/workflow_json.json",
+  "daily_budget": 2.0,
+  "max_images_per_day": 10,
+  "cost_per_image": 0.200,
+  "prompt_templates": {
+    "academic_efficiency": "与'{topic}'相关的教育插图，清晰易懂，{style}",
+    "visual_creation": "'{topic}'主题的艺术创作，创意设计，{style}",
+    "geek_daily": "'{topic}'相关的技术场景，极客风格，{style}",
+    "hot_topics": "'{topic}'主题的现代插图，社交媒体风格，{style}"
+  },
+  "style_mapping": {
+    "academic_efficiency": "教育插画风格",
+    "visual_creation": "艺术创作风格",
+    "geek_daily": "现代科技风格",
+    "hot_topics": "社交媒体风格"
+  }
+}

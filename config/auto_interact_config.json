@@ -1,0 +1,40 @@
+{
+  "enabled": true,
+  "daily_comment_limit": 15,
+  "daily_like_limit": 20,
+  "daily_collect_limit": 10,
+  "min_interval_seconds": 5,
+  "max_interval_seconds": 15,
+  "target_keywords": {
+    "primary": [
+      "编程技巧",
+      "效率工具",
+      "AI工具",
+      "学习方法",
+      "桌面美化",
+      "极客装备"
+    ],
+    "trending": [
+      "开学",
+      "实习",
+      "考证",
+      "春招",
+      "秋招",
+      "毕业论文"
+    ]
+  },
+  "avoid_users": [],
+  "comment_llm_enabled": true,
+  "comment_templates": [
+    "学到了！感谢分享~ 🐶",
+    "太强了，收藏了！",
+    "这个真的有用，点赞👍",
+    "太棒了，学到了！",
+    "感谢博主的分享~",
+    "写得真好，mark一下",
+    "👍 棒棒的！",
+    "学习到了！",
+    "很有帮助，谢谢！",
+    "太实用了！"
+  ]
+}

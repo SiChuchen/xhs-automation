@@ -1,0 +1,59 @@
+{
+  "webhooks": {
+    "enabled": false,
+    "providers": {
+      "feishu": {
+        "enabled": false,
+        "webhook_url": "https://open.feishu.cn/open-apis/bot/v2/hook/YOUR_WEBHOOK_TOKEN",
+        "message_type": "text",
+        "at_all": false
+      },
+      "dingtalk": {
+        "enabled": false,
+        "webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=YOUR_TOKEN",
+        "secret": "YOUR_SECRET",
+        "at_all": false
+      },
+      "custom": {
+        "enabled": false,
+        "webhook_url": "",
+        "method": "POST",
+        "headers": {},
+        "payload_template": "{\"text\": \"{{message}}\"}"
+      }
+    }
+  },
+  "cookie_monitoring": {
+    "enabled": true,
+    "cookie_path": "~/.xhs-automation/config/cookies.json",
+    "warning_days": 3,
+    "check_interval_hours": 24
+  },
+  "storage_management": {
+    "enabled": true,
+    "log_retention_days": 30,
+    "image_retention_days": 7,
+    "max_log_size_mb": 100,
+    "max_image_dir_size_mb": 1024,
+    "cleanup_interval_hours": 24
+  },
+  "system_monitoring": {
+    "enabled": true,
+    "check_interval_minutes": 60,
+    "monitor_items": [
+      "service_status",
+      "docker_container",
+      "disk_usage",
+      "memory_usage",
+      "cpu_usage"
+    ],
+    "disk_warning_threshold": 80,
+    "memory_warning_threshold": 85,
+    "cpu_warning_threshold": 90
+  },
+  "alert_levels": {
+    "critical": ["service_down", "cookie_expired", "disk_full"],
+    "warning": ["cookie_expiring", "high_disk_usage", "high_memory_usage"],
+    "info": ["publish_success", "service_started", "cleanup_completed"]
+  }
+}

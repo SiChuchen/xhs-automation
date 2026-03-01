@@ -1,0 +1,8 @@
+{
+  "provider": "minimax",
+  "model": "MiniMax-M2.5",
+  "api_key": "your_api_key_here",
+  "base_url": "https://api.minimax.chat/v1",
+  "temperature": 0.8,
+  "max_tokens": 1000
+}

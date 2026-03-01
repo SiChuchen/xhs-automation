@@ -1,0 +1,33 @@
+[Unit]
+Description=Xiaohongshu Automation Service (Monitored Version)
+After=network.target docker.service
+Requires=docker.service
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/path/to/xhs-automation
+Environment="PATH=/path/to/xhs-automation/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/path/to/xhs-automation/venv/bin/python scripts/xhs_automation_monitored.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xhs-automation-monitored
+
+# 环境变量设置
+Environment="PYTHONUNBUFFERED=1"
+Environment="TZ=Asia/Shanghai"
+# 监控相关环境变量（可选）
+Environment="XHS_MONITORING_ENABLED=true"
+Environment="XHS_WEBHOOK_ENABLED=false"
+
+# 资源限制（可选）
+MemoryLimit=512M
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target
