@@ -368,6 +368,58 @@ def cleanup_cache_files(cache_dir: str) -> Dict:
     return {"count": count, "size": freed_size}
 
 
+@huey.task(expires=3600)
+def db_maintenance_task() -> Dict[str, Any]:
+    """
+    数据库维护任务 - 每周执行
+    
+    执行 VACUUM 整理数据库碎片
+    """
+    from ..database import get_database
+    
+    logger.info("开始数据库维护任务")
+    
+    try:
+        db = get_database()
+        
+        db.checkpoint()
+        
+        import sqlite3
+        conn = sqlite3.connect(db.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("VACUUM")
+        logger.info("VACUUM 执行完成")
+        
+        cursor.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        logger.info("WAL checkpoint 执行完成")
+        
+        conn.close()
+        
+        db_size = db.get_db_size()
+        
+        logger.info(f"数据库维护完成, 当前大小: {db_size} bytes")
+        return {"status": "success", "db_size": db_size}
+        
+    except Exception as e:
+        logger.error(f"数据库维护任务失败: {e}")
+        return {"status": "failure", "error": str(e)}
+
+
+def schedule_with_jitter(task_func, base_interval: int, jitter: int = 300):
+    """
+    带随机延迟的任务调度
+    
+    Args:
+        task_func: 任务函数
+        base_interval: 基础间隔(秒)
+        jitter: 随机延迟范围(秒)
+    """
+    import random
+    delay = base_interval + random.randint(0, jitter)
+    return task_func.schedule(delay=delay)
+
+
 # 定时任务调度
 class TaskScheduler:
     """任务调度器"""

@@ -75,6 +75,10 @@ class MainProcess:
         
     def schedule_tasks(self):
         """调度定时任务"""
+        import random
+        
+        jitter = self.config.get("jitter_seconds", 300)
+        
         # 热搜获取 - 每小时一次
         schedule.every().hour.do(self._schedule_trending_fetch)
         
@@ -90,7 +94,13 @@ class MainProcess:
         # 内容发布 - 每天早上9点 (示例)
         # schedule.every().day.at("09:00").do(self._schedule_publish)
         
-        logger.info("定时任务已调度")
+        logger.info(f"定时任务已调度 (jitter={jitter}s)")
+    
+    def _add_jitter(self) -> int:
+        """添加随机延迟，避免突发流量"""
+        import random
+        jitter = self.config.get("jitter_seconds", 300)
+        return random.randint(0, jitter)
         
     def _schedule_trending_fetch(self):
         """调度热搜获取"""

@@ -17,3 +17,4 @@ openai>=1.0
 # 可选
 # beautifulsoup4>=4.12  # 网页解析
 # lxml>=4.9           # XML/HTML
+imagehash>=4.3        # 图片 pHash

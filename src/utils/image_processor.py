@@ -3,7 +3,9 @@
 """
 
 import os
+import time
 import logging
+import numpy as np
 from typing import Tuple, Optional, List
 from pathlib import Path
 from PIL import Image
@@ -235,3 +237,199 @@ def compress_image(input_path: str, output_path: str, quality: int = 85, max_siz
         img.thumbnail((max_size, max_size), Image.LANCZOS)
     
     img.save(output_path, quality=quality, optimize=True)
+
+
+try:
+    import imagehash
+    IMAGEHASH_AVAILABLE = True
+except ImportError:
+    IMAGEHASH_AVAILABLE = False
+    logger.warning("imagehash 未安装，pHash 功能不可用")
+
+
+class ImageAntiFingerprint:
+    """图片抗指纹处理 - 防止 AI 生成图片被平台检测"""
+    
+    def __init__(self, hash_db_path: str = "data/cache/image_hashes.json"):
+        self.hash_db_path = hash_db_path
+        self.hash_db = {}
+        self._load_hash_db()
+    
+    def _load_hash_db(self):
+        """加载哈希数据库"""
+        if not os.path.exists(self.hash_db_path):
+            return
+        
+        try:
+            import json
+            with open(self.hash_db_path, 'r') as f:
+                self.hash_db = json.load(f)
+            logger.info(f"已加载 {len(self.hash_db)} 个图片哈希")
+        except Exception as e:
+            logger.warning(f"加载哈希数据库失败: {e}")
+    
+    def _save_hash_db(self):
+        """保存哈希数据库"""
+        try:
+            import json
+            os.makedirs(os.path.dirname(self.hash_db_path), exist_ok=True)
+            with open(self.hash_db_path, 'w') as f:
+                json.dump(self.hash_db, f)
+        except Exception as e:
+            logger.warning(f"保存哈希数据库失败: {e}")
+    
+    def compute_phash(self, image_path: str) -> str:
+        """计算 pHash 感知哈希"""
+        if not IMAGEHASH_AVAILABLE:
+            return ""
+        
+        try:
+            img = Image.open(image_path)
+            phash = imagehash.phash(img)
+            return str(phash)
+        except Exception as e:
+            logger.error(f"计算 pHash 失败: {e}")
+            return ""
+    
+    def is_duplicate(self, new_hash: str, threshold: int = 5) -> bool:
+        """检查是否与已有图片重复"""
+        if not new_hash or new_hash in self.hash_db:
+            return True
+        
+        for existing_hash in self.hash_db.keys():
+            if self._hash_distance(new_hash, existing_hash) <= threshold:
+                return True
+        
+        return False
+    
+    def _hash_distance(self, hash1: str, hash2: str) -> int:
+        """计算两个哈希的海明距离"""
+        if len(hash1) != len(hash2):
+            return 999
+        
+        distance = sum(c1 != c2 for c1, c2 in zip(hash1, hash2))
+        return distance
+    
+    def add_to_db(self, image_path: str, hash_value: str = None):
+        """将图片添加到哈希数据库"""
+        if not hash_value:
+            hash_value = self.compute_phash(image_path)
+        
+        if hash_value:
+            self.hash_db[hash_value] = {
+                "path": image_path,
+                "timestamp": time.time()
+            }
+            self._save_hash_db()
+    
+    def remove_exif(self, image_path: str, output_path: str = None) -> str:
+        """
+        清理 EXIF 元数据
+        
+        去除 AI 软件标记等敏感信息
+        """
+        img = Image.open(image_path)
+        
+        data = list(img.getdata())
+        img_without_exif = Image.new(img.mode, img.size)
+        img_without_exif.putdata(data)
+        
+        if output_path is None:
+            output_path = image_path
+        
+        img_without_exif.save(output_path, img.format or "JPEG")
+        logger.info(f"已清理 EXIF: {output_path}")
+        
+        return output_path
+    
+    def add_noise(self, image_path: str, output_path: str = None, 
+                  noise_level: float = 2.0) -> str:
+        """
+        注入高频噪声
+        
+        添加肉眼不可见的高频噪声，改变图片数字指纹
+        """
+        import numpy as np
+        
+        img = Image.open(image_path)
+        
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        
+        img_array = np.array(img, dtype=np.float32)
+        
+        noise = np.random.normal(0, noise_level, img_array.shape)
+        noisy_img = np.clip(img_array + noise, 0, 255).astype(np.uint8)
+        
+        result = Image.fromarray(noisy_img)
+        
+        if output_path is None:
+            output_path = image_path
+        
+        result.save(output_path, quality=95)
+        logger.info(f"已注入噪声: {output_path}, level={noise_level}")
+        
+        return output_path
+    
+    def adjust_channels(self, image_path: str, output_path: str = None,
+                       r_adj: float = 1.0, g_adj: float = 1.0, b_adj: float = 1.0) -> str:
+        """
+        微调 RGB 通道
+        
+        轻微调整各通道值，改变图片指纹
+        """
+        import numpy as np
+        
+        img = Image.open(image_path)
+        
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        
+        img_array = np.array(img, dtype=np.float32)
+        
+        img_array[:, :, 0] = np.clip(img_array[:, :, 0] * r_adj, 0, 255)
+        img_array[:, :, 1] = np.clip(img_array[:, :, 1] * g_adj, 0, 255)
+        img_array[:, :, 2] = np.clip(img_array[:, :, 2] * b_adj, 0, 255)
+        
+        result = Image.fromarray(img_array.astype(np.uint8))
+        
+        if output_path is None:
+            output_path = image_path
+        
+        result.save(output_path, quality=95)
+        logger.info(f"已调整通道: {output_path}")
+        
+        return output_path
+    
+    def process(self, image_path: str, output_path: str = None,
+                remove_exif: bool = True, add_noise: bool = True) -> str:
+        """
+        完整抗指纹处理流程
+        """
+        if output_path is None:
+            p = Path(image_path)
+            output_path = str(p.parent / f"{p.stem}_anti{p.suffix}")
+        
+        temp_path = output_path
+        
+        if remove_exif:
+            temp_path = self.remove_exif(image_path, output_path)
+        
+        if add_noise:
+            temp_path = self.add_noise(temp_path)
+        
+        hash_value = self.compute_phash(output_path)
+        
+        if self.is_duplicate(hash_value):
+            logger.warning(f"检测到重复图片: {image_path}")
+            hash_value = self.compute_phash(image_path) + "_modified"
+        
+        self.add_to_db(output_path, hash_value)
+        
+        return output_path
+
+
+def process_anti_fingerprint(input_path: str, output_path: str = None) -> str:
+    """便捷函数: 抗指纹处理"""
+    processor = ImageAntiFingerprint()
+    return processor.process(input_path, output_path)
