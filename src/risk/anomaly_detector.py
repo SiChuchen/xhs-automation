@@ -1,7 +1,10 @@
 """
 异常检测器 + 熔断器
+支持状态持久化
 """
 
+import os
+import json
 import time
 import logging
 from typing import Dict, Optional, Callable
@@ -38,22 +41,73 @@ class CircuitState(Enum):
 
 
 class CircuitBreaker:
-    """熔断器"""
+    """熔断器 (支持持久化)"""
     
     def __init__(
         self,
         failure_threshold: int = 3,
         recovery_timeout: int = 60,
         half_open_max_calls: int = 2,
+        state_file: Optional[str] = None,
     ):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.half_open_max_calls = half_open_max_calls
+        self.state_file = state_file
         
         self.state = CircuitState.CLOSED
         self.failure_count = 0
         self.last_failure_time = 0
         self.half_open_calls = 0
+        
+        # 启动时恢复状态
+        if state_file and os.path.exists(state_file):
+            self._load_state()
+    
+    def _get_state_data(self) -> Dict:
+        """获取状态数据"""
+        return {
+            "state": self.state.value,
+            "failure_count": self.failure_count,
+            "last_failure_time": self.last_failure_time,
+            "half_open_calls": self.half_open_calls,
+        }
+    
+    def _load_state(self):
+        """从文件加载状态"""
+        try:
+            with open(self.state_file, 'r') as f:
+                data = json.load(f)
+            
+            self.state = CircuitState(data.get("state", "closed"))
+            self.failure_count = data.get("failure_count", 0)
+            self.last_failure_time = data.get("last_failure_time", 0)
+            self.half_open_calls = data.get("half_open_calls", 0)
+            
+            # 如果在熔断中，检查是否已过恢复时间
+            if self.state == CircuitState.OPEN:
+                if time.time() - self.last_failure_time > self.recovery_timeout:
+                    self.state = CircuitState.HALF_OPEN
+                    self.half_open_calls = 0
+                    logger.info("熔断器从持久化恢复，进入半开状态")
+                else:
+                    logger.info(f"熔断器从持久化恢复，仍处于开启状态")
+            
+            logger.info(f"熔断器状态已恢复: {self.state.value}")
+        except Exception as e:
+            logger.warning(f"加载熔断器状态失败: {e}")
+    
+    def _save_state(self):
+        """保存状态到文件"""
+        if not self.state_file:
+            return
+        
+        try:
+            os.makedirs(os.path.dirname(self.state_file), exist_ok=True)
+            with open(self.state_file, 'w') as f:
+                json.dump(self._get_state_data(), f)
+        except Exception as e:
+            logger.warning(f"保存熔断器状态失败: {e}")
     
     def call(self, func: Callable, *args, **kwargs):
         """执行函数 (带熔断)"""
@@ -83,6 +137,8 @@ class CircuitBreaker:
                 logger.info("熔断器关闭，恢复正常")
         else:
             self.failure_count = 0
+        
+        self._save_state()
     
     def _on_failure(self):
         """失败回调"""
@@ -95,6 +151,8 @@ class CircuitBreaker:
         elif self.failure_count >= self.failure_threshold:
             self.state = CircuitState.OPEN
             logger.warning(f"熔断器开启 (连续{self.failure_count}次失败)")
+        
+        self._save_state()
     
     def get_state(self) -> str:
         """获取状态"""
@@ -104,15 +162,19 @@ class CircuitBreaker:
 class AnomalyDetector:
     """异常检测器"""
     
-    def __init__(self, callback: Optional[Callable] = None):
+    def __init__(self, callback: Optional[Callable] = None, state_dir: str = "data/risk"):
         self.callback = callback
         self.events: deque = deque(maxlen=100)
+        self.state_dir = state_dir
         
         self.auth_failures = 0
         self.rate_limit_triggers = 0
         self.api_errors = 0
         
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}
+        
+        # 确保目录存在
+        os.makedirs(state_dir, exist_ok=True)
     
     def record_event(self, event: AnomalyEvent):
         """记录异常事件"""
@@ -170,7 +232,8 @@ class AnomalyDetector:
     def get_circuit_breaker(self, name: str) -> CircuitBreaker:
         """获取熔断器"""
         if name not in self.circuit_breakers:
-            self.circuit_breakers[name] = CircuitBreaker()
+            state_file = os.path.join(self.state_dir, f"circuit_{name}.json")
+            self.circuit_breakers[name] = CircuitBreaker(state_file=state_file)
         return self.circuit_breakers[name]
     
     def get_status(self) -> Dict:
