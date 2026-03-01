@@ -2,3 +2,18 @@
 requests>=2.32.0
 schedule>=1.2.0
 Pillow>=10.0.0
+
+# Phase 1 - 架构升级
+huey>=2.5
+diskcache>=5.6
+bitarray>=2.8
+pyyaml>=6.0
+
+# Phase 2 - AI Agent
+chromadb>=0.4
+numpy>=1.24
+openai>=1.0
+
+# 可选
+# beautifulsoup4>=4.12  # 网页解析
+# lxml>=4.9           # XML/HTML

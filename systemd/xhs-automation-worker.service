@@ -1,0 +1,17 @@
+[Unit]
+Description=XHS Automation - Worker Process
+After=network.target xhs-automation-main.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/xhs-automation
+ExecStart=/home/ubuntu/xhs-automation/venv/bin/python -m src.worker_process --workers 2 --period 15
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/ubuntu/xhs-automation/logs/worker.log
+StandardError=append:/home/ubuntu/xhs-automation/logs/worker.log
+Environment="PYTHONPATH=/home/ubuntu/xhs-automation"
+
+[Install]
+WantedBy=multi-user.target

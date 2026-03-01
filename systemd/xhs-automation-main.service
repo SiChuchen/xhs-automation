@@ -1,0 +1,17 @@
+[Unit]
+Description=XHS Automation - Main Process
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/xhs-automation
+ExecStart=/home/ubuntu/xhs-automation/venv/bin/python -m src.main_process --db-path data/xhs_data.db --cache-dir data/cache
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/home/ubuntu/xhs-automation/logs/main.log
+StandardError=append:/home/ubuntu/xhs-automation/logs/main.log
+Environment="PYTHONPATH=/home/ubuntu/xhs-automation"
+
+[Install]
+WantedBy=multi-user.target
