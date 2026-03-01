@@ -84,6 +84,9 @@ class MainProcess:
         # 清理任务 - 每天凌晨3点
         schedule.every().day.at("03:00").do(self._schedule_cleanup)
         
+        # WAL checkpoint - 每小时执行，防止 WAL 文件无限膨胀
+        schedule.every().hour.do(self._run_checkpoint)
+        
         # 内容发布 - 每天早上9点 (示例)
         # schedule.every().day.at("09:00").do(self._schedule_publish)
         
@@ -113,6 +116,19 @@ class MainProcess:
             logger.info(f"已调度清理任务: {task.id}")
         except Exception as e:
             logger.error(f"调度清理任务失败: {e}")
+    
+    def _run_checkpoint(self):
+        """执行 WAL checkpoint，防止 WAL 文件无限膨胀"""
+        try:
+            if self.db:
+                self.db.checkpoint()
+                logger.info("WAL checkpoint 执行完成")
+            
+            if self.cache:
+                self.cache.close()
+                logger.info("缓存已清理")
+        except Exception as e:
+            logger.error(f"Checkpoint 执行失败: {e}")
             
     def run(self):
         """运行主循环"""

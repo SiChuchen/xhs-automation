@@ -41,7 +41,22 @@ def retry_with_backoff(task_func):
     return wrapper
 
 
-@huey.task()
+# 任务 TTL 配置 (秒)
+TASK_TTL = {
+    "publish": 86400,      # 发布任务: 24小时
+    "interact": 43200,     # 互动任务: 12小时 (时效性强)
+    "trending": 3600,     # 热搜任务: 1小时
+    "analyze": 7200,      # 分析任务: 2小时
+    "cleanup": 3600,      # 清理任务: 1小时
+}
+
+# 任务过期检查
+def is_task_expired(task_created_at: float, ttl: int) -> bool:
+    """检查任务是否已过期"""
+    return (time.time() - task_created_at) > ttl
+
+
+@huey.task(expires=TASK_TTL["publish"])
 def publish_note_task(title: str, content: str, image_paths: list = None, 
                       tags: list = None, topic: str = None) -> Dict[str, Any]:
     """
@@ -98,7 +113,7 @@ def publish_note_task(title: str, content: str, image_paths: list = None,
         return {"status": "failure", "error": str(e)}
 
 
-@huey.task()
+@huey.task(expires=TASK_TTL["interact"])
 def auto_interact_task(keywords: list = None, max_likes: int = 10, 
                        max_comments: int = 5, max_collects: int = 5) -> Dict[str, Any]:
     """
@@ -134,7 +149,7 @@ def auto_interact_task(keywords: list = None, max_likes: int = 10,
         return {"status": "failure", "error": str(e)}
 
 
-@huey.task()
+@huey.task(expires=TASK_TTL["trending"])
 def fetch_trending_task(platforms: list = None) -> Dict[str, Any]:
     """
     获取热搜任务
@@ -159,7 +174,7 @@ def fetch_trending_task(platforms: list = None) -> Dict[str, Any]:
         return {"status": "failure", "error": str(e)}
 
 
-@huey.task()
+@huey.task(expires=TASK_TTL["analyze"])
 def analyze_post_task(post_id: str) -> Dict[str, Any]:
     """
     分析帖子数据任务
@@ -198,7 +213,7 @@ def analyze_post_task(post_id: str) -> Dict[str, Any]:
         return {"status": "failure", "error": str(e)}
 
 
-@huey.task()
+@huey.task(expires=TASK_TTL["cleanup"])
 def cleanup_task(retention_days: int = 30) -> Dict[str, Any]:
     """
     清理任务
