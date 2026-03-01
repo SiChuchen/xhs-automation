@@ -216,29 +216,156 @@ def analyze_post_task(post_id: str) -> Dict[str, Any]:
 @huey.task(expires=TASK_TTL["cleanup"])
 def cleanup_task(retention_days: int = 30) -> Dict[str, Any]:
     """
-    清理任务
+    清理任务 - 扩展版
     
     Args:
         retention_days: 保留天数
     
     Returns:
-        {"deleted": {"interactions": 100, "analytics": 50, "cache": 20}}
+        {"deleted": {...}, "storage_freed": "xxx MB"}
     """
     from ..database import get_database
+    import os
+    import glob
     
     logger.info(f"开始清理任务: retention_days={retention_days}")
     
+    deleted = {}
+    storage_freed = 0
+    
     try:
         db = get_database()
-        deleted = db.cleanup_old_data(retention_days)
+        deleted.update(db.cleanup_old_data(retention_days))
         db.checkpoint()
         
-        logger.info(f"清理完成: {deleted}")
-        return {"status": "success", "deleted": deleted}
+        images_dir = "images"
+        if os.path.exists(images_dir):
+            freed = cleanup_old_images(images_dir, retention_days=7)
+            deleted["old_images"] = freed["count"]
+            storage_freed += freed["size"]
+        
+        logs_dir = "logs"
+        if os.path.exists(logs_dir):
+            freed = cleanup_old_logs(logs_dir, retention_days=30)
+            deleted["old_logs"] = freed["count"]
+            storage_freed += freed["size"]
+        
+        cache_dir = "data/cache"
+        if os.path.exists(cache_dir):
+            freed = cleanup_cache_files(cache_dir)
+            deleted["cache_files"] = freed["count"]
+            storage_freed += freed["size"]
+        
+        logger.info(f"清理完成: {deleted}, 释放空间: {storage_freed} bytes")
+        return {"status": "success", "deleted": deleted, "storage_freed": storage_freed}
         
     except Exception as e:
         logger.error(f"清理任务失败: {e}")
         return {"status": "failure", "error": str(e)}
+
+
+def cleanup_old_images(images_dir: str, retention_days: int = 7) -> Dict:
+    """
+    清理过期图片
+    
+    策略: 
+    - 删除发布成功超过 7 天的原始图片
+    - 保留 _xhs 后缀的处理后图片
+    """
+    import time
+    from pathlib import Path
+    
+    now = time.time()
+    retention_seconds = retention_days * 24 * 3600
+    
+    count = 0
+    freed_size = 0
+    
+    if not os.path.exists(images_dir):
+        return {"count": 0, "size": 0}
+    
+    for root, dirs, files in os.walk(images_dir):
+        for file in files:
+            filepath = os.path.join(root, file)
+            
+            if "_xhs" in file:
+                continue
+            
+            try:
+                mtime = os.path.getmtime(filepath)
+                if now - mtime > retention_seconds:
+                    size = os.path.getsize(filepath)
+                    os.remove(filepath)
+                    count += 1
+                    freed_size += size
+            except Exception as e:
+                logger.warning(f"删除图片失败: {filepath}, {e}")
+    
+    logger.info(f"清理过期图片: {count} 个, 释放 {freed_size} bytes")
+    return {"count": count, "size": freed_size}
+
+
+def cleanup_old_logs(logs_dir: str, retention_days: int = 30) -> Dict:
+    """清理过期日志文件"""
+    import time
+    import gzip
+    
+    now = time.time()
+    retention_seconds = retention_days * 24 * 3600
+    
+    count = 0
+    freed_size = 0
+    
+    if not os.path.exists(logs_dir):
+        return {"count": 0, "size": 0}
+    
+    for root, dirs, files in os.walk(logs_dir):
+        for file in files:
+            filepath = os.path.join(root, file)
+            
+            try:
+                mtime = os.path.getmtime(filepath)
+                if now - mtime > retention_seconds:
+                    size = os.path.getsize(filepath)
+                    os.remove(filepath)
+                    count += 1
+                    freed_size += size
+            except Exception as e:
+                logger.warning(f"删除日志失败: {filepath}, {e}")
+    
+    logger.info(f"清理过期日志: {count} 个, 释放 {freed_size} bytes")
+    return {"count": count, "size": freed_size}
+
+
+def cleanup_cache_files(cache_dir: str) -> Dict:
+    """清理缓存文件 (简单的 LRU)"""
+    import time
+    
+    count = 0
+    freed_size = 0
+    
+    if not os.path.exists(cache_dir):
+        return {"count": 0, "size": 0}
+    
+    files = []
+    for f in os.listdir(cache_dir):
+        filepath = os.path.join(cache_dir, f)
+        if os.path.isfile(filepath):
+            files.append((filepath, os.path.getmtime(filepath), os.path.getsize(filepath)))
+    
+    if len(files) > 1000:
+        files.sort(key=lambda x: x[1])
+        
+        for filepath, mtime, size in files[:-500]:
+            try:
+                os.remove(filepath)
+                count += 1
+                freed_size += size
+            except Exception as e:
+                logger.warning(f"删除缓存失败: {filepath}, {e}")
+    
+    logger.info(f"清理缓存文件: {count} 个, 释放 {freed_size} bytes")
+    return {"count": count, "size": freed_size}
 
 
 # 定时任务调度
