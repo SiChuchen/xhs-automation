@@ -11,6 +11,8 @@ from typing import Dict, Optional
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from ..utils.timezone_utils import now as get_now, current_hour, current_minute
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,7 +55,7 @@ class TokenBucketRateLimiter:
     
     def _get_next_reset(self) -> datetime:
         """获取次日零点"""
-        now = datetime.now()
+        now = get_now()
         return datetime(now.year, now.month, now.day) + timedelta(days=1)
     
     def _refill_bucket(self):
@@ -70,23 +72,23 @@ class TokenBucketRateLimiter:
     
     def _cleanup_old_counts(self):
         """清理过期的计数"""
-        now = datetime.now()
-        current_minute = now.minute + now.hour * 60
-        current_hour = now.hour
+        now = get_now()
+        current_minute_value = now.minute + now.hour * 60
+        current_hour_value = now.hour
         
         self.minute_calls = {
             k: v for k, v in self.minute_calls.items()
-            if k >= current_minute - 1
+            if k >= current_minute_value - 1
         }
         
         self.hourly_calls = {
             k: v for k, v in self.hourly_calls.items()
-            if k >= current_hour - 1
+            if k >= current_hour_value - 1
         }
     
     def _check_daily_limit(self) -> bool:
         """检查每日限额"""
-        if datetime.now() >= self.daily_tokens_reset:
+        if get_now() >= self.daily_tokens_reset:
             self.daily_tokens_used = 0
             self.daily_tokens_reset = self._get_next_reset()
         
@@ -121,7 +123,7 @@ class TokenBucketRateLimiter:
             
             # 记录调用
             self._cleanup_old_counts()
-            now = datetime.now()
+            now = get_now()
             minute_key = now.minute + now.hour * 60
             hour_key = now.hour
             
@@ -134,7 +136,7 @@ class TokenBucketRateLimiter:
         """检查是否可以调用"""
         self._cleanup_old_counts()
         
-        now = datetime.now()
+        now = get_now()
         minute_key = now.minute + now.hour * 60
         hour_key = now.hour
         
@@ -165,9 +167,9 @@ class TokenBucketRateLimiter:
                 "remaining": self.config.max_tokens_per_day - self.daily_tokens_used
             },
             "current_minute_calls": self.minute_calls.get(
-                datetime.now().minute + datetime.now().hour * 60, 0
+                current_minute() + current_hour() * 60, 0
             ),
-            "current_hour_calls": self.hourly_calls.get(datetime.now().hour, 0),
+            "current_hour_calls": self.hourly_calls.get(current_hour(), 0),
             "bucket_tokens": self.bucket.tokens
         }
 

@@ -52,11 +52,20 @@ class ConnectionPool:
 class XHSDatabase:
     """小红书数据库操作类"""
     
+    SCHEMA_VERSION = 4
+    
+    MIGRATIONS = {
+        1: "ALTER TABLE posts ADD COLUMN locked_at DATETIME",
+        2: "ALTER TABLE interactions ADD COLUMN locked_at DATETIME",
+        3: "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY, applied_at TEXT)",
+    }
+    
     def __init__(self, db_path: str = "data/xhs_data.db"):
         self.db_path = db_path
         self._ensure_db_dir()
         self._pool = ConnectionPool(db_path)
         self._init_database()
+        self._run_migrations()
         logger.info(f"数据库初始化完成 (WAL模式): {db_path}")
     
     def _ensure_db_dir(self):
@@ -144,6 +153,58 @@ class XHSDatabase:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_interactions_keyword ON interactions(target_keyword)")
             
             logger.info("数据库初始化完成")
+    
+    def _run_migrations(self):
+        """执行数据库迁移"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS schema_version (
+                        version INTEGER PRIMARY KEY,
+                        applied_at TEXT
+                    )
+                """)
+                
+                cursor.execute("SELECT MAX(version) FROM schema_version")
+                result = cursor.fetchone()
+                current_version = result[0] if result and result[0] else 0
+                
+                if current_version < self.SCHEMA_VERSION:
+                    logger.info(f"开始数据库迁移: v{current_version} -> v{self.SCHEMA_VERSION}")
+                    
+                    for version in range(current_version + 1, self.SCHEMA_VERSION + 1):
+                        if version in self.MIGRATIONS:
+                            try:
+                                sql = self.MIGRATIONS[version]
+                                cursor.execute(sql)
+                                cursor.execute(
+                                    "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
+                                    (version, datetime.now().isoformat())
+                                )
+                                logger.info(f"迁移 v{version} 完成: {sql[:50]}...")
+                            except Exception as e:
+                                if "duplicate column" in str(e).lower():
+                                    logger.warning(f"迁移 v{version} 跳过: 字段已存在")
+                                else:
+                                    raise
+                    
+                    logger.info(f"数据库迁移完成: v{current_version} -> v{self.SCHEMA_VERSION}")
+        except Exception as e:
+            logger.error(f"数据库迁移失败: {e}")
+            raise
+    
+    def get_schema_version(self) -> int:
+        """获取当前数据库版本"""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT MAX(version) FROM schema_version")
+                result = cursor.fetchone()
+                return result[0] if result and result[0] else 0
+        except:
+            return 0
     
     def get_wal_status(self) -> Dict:
         """获取 WAL 模式状态"""

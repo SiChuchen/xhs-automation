@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 
+from ..utils.timezone_utils import now as get_now
+
 logger = logging.getLogger(__name__)
 
 
@@ -247,7 +249,7 @@ class OptimisticLockStateMachine:
             """, (
                 TaskStatus.FAILED.value,
                 error[:500] if error else "",
-                datetime.now().timestamp(),
+                get_now().timestamp(),
                 task_id
             ))
             conn.commit()
@@ -265,7 +267,7 @@ class OptimisticLockStateMachine:
     
     def cleanup_stale_locks(self, table_name: str, timeout_hours: int = 24) -> int:
         """清理过期的锁（运维用）"""
-        cutoff = (datetime.now() - timedelta(hours=timeout_hours)).isoformat()
+        cutoff = (get_now() - timedelta(hours=timeout_hours)).isoformat()
         
         with self._get_conn() as conn:
             cursor = conn.execute(f"""

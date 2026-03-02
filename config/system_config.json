@@ -1,0 +1,21 @@
+{
+    "timezone": "Asia/Shanghai",
+    "schedule": {
+        "night_prefill": {
+            "start": "00:00",
+            "end": "06:00"
+        },
+        "daytime": {
+            "start": "06:00",
+            "end": "18:00"
+        },
+        "evening_peak": {
+            "start": "18:00",
+            "end": "22:00"
+        }
+    },
+    "backup": {
+        "retention_days": 7,
+        "time": "04:00"
+    }
+}

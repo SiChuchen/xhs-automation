@@ -9,6 +9,8 @@ from datetime import datetime
 from typing import Dict, Optional
 from dataclasses import dataclass
 
+from ..utils.timezone_utils import current_hour, now
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,18 +68,16 @@ class QueuePriorityScheduler:
     
     def get_current_window(self) -> TimeWindow:
         """获取当前时间段"""
-        current_hour = datetime.now().hour
+        current_hour_value = current_hour()
         
         for window in self.windows:
             if window.start_hour > window.end_hour:
-                # 跨天时间段 (如 22:00-02:00)
-                if current_hour >= window.start_hour or current_hour < window.end_hour:
+                if current_hour_value >= window.start_hour or current_hour_value < window.end_hour:
                     return window
             else:
-                if window.start_hour <= current_hour < window.end_hour:
+                if window.start_hour <= current_hour_value < window.end_hour:
                     return window
         
-        # 默认返回均衡模式
         return TimeWindow("default", 0, 24, 5, 5, "balanced")
     
     def should_suspend_publish(self) -> bool:
@@ -109,7 +109,7 @@ class QueuePriorityScheduler:
             "action": window.action,
             "slow_priority": window.slow_priority,
             "fast_priority": window.fast_priority,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": now().isoformat()
         }
 
 

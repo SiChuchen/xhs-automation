@@ -1,8 +1,24 @@
 {
-  "provider": "minimax",
-  "model": "MiniMax-M2.5",
-  "api_key": "your_api_key_here",
-  "base_url": "https://api.minimax.chat/v1",
-  "temperature": 0.8,
-  "max_tokens": 1000
+    "providers": [
+        {
+            "name": "minimax",
+            "provider": "minimax",
+            "api_key": "",
+            "base_url": "https://api.minimax.chat/v1",
+            "model": "MiniMax-M2.5",
+            "enabled": true
+        },
+        {
+            "name": "deepseek",
+            "provider": "deepseek",
+            "api_key": "",
+            "base_url": "https://api.deepseek.com/v1",
+            "model": "deepseek-chat",
+            "enabled": false
+        }
+    ],
+    "fallback_enabled": true,
+    "circuit_breaker_threshold": 2,
+    "temperature": 0.8,
+    "max_tokens": 1000
 }
