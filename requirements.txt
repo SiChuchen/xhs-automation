@@ -1,20 +1,12 @@
-# 小红书自动化系统依赖
-requests>=2.32.0
-schedule>=1.2.0
-Pillow>=10.0.0
-
-# Phase 1 - 架构升级
-huey>=2.5
-diskcache>=5.6
-bitarray>=2.8
-pyyaml>=6.0
-
-# Phase 2 - AI Agent
-chromadb>=0.4
-numpy>=1.24
-openai>=1.0
-
-# 可选
-# beautifulsoup4>=4.12  # 网页解析
-# lxml>=4.9           # XML/HTML
-imagehash>=4.3        # 图片 pHash
+bitarray==3.8.0
+certifi==2026.2.25
+charset-normalizer==3.4.4
+diskcache==5.6.3
+huey==2.6.0
+idna==3.11
+numpy==2.4.2
+pillow==12.1.1
+PyYAML==6.0.3
+requests==2.32.5
+schedule==1.2.2
+urllib3==2.6.3

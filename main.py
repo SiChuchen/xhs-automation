@@ -9,17 +9,22 @@ import sys
 import os
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from src.database import get_database
-from src.xhs_api_client import get_xhs_client
-from src.mcp_client import get_mcp_client
-from src.auto_interact import AutoInteract
+# 确保日志目录存在
+log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+os.makedirs(log_dir, exist_ok=True)
 
-# 配置日志
+# 配置日志 - 单文件上限 10MB，最多保留 5 个历史文件
+log_file = os.path.join(log_dir, 'xhs_automation.log')
+handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5, encoding='utf-8')
+handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+
 logging.basicConfig(
+    handlers=[handler],
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
