@@ -9,6 +9,8 @@ from typing import Dict, Optional, List, Any
 
 logger = logging.getLogger(__name__)
 
+MAX_CONVERSATION_TURNS = 5
+
 
 class ReplyGenerator:
     """个性化回复生成器"""

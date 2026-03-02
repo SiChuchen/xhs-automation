@@ -38,7 +38,7 @@ class XHSMCPClient:
             response = self.session.post(
                 self.mcp_url, 
                 json=payload,
-                timeout=60
+                timeout=(5, 60)  # 5秒连接超时, 60秒读取超时
             )
             response.raise_for_status()
             

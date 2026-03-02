@@ -6,6 +6,7 @@
 import sqlite3
 import json
 import os
+import time
 import logging
 import threading
 from datetime import datetime, timedelta
@@ -163,6 +164,66 @@ class XHSDatabase:
         """执行 WAL 检查点"""
         with self._get_connection() as conn:
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    
+    def backup_database(self, backup_dir: str = "data/backups", retention_days: int = 7) -> Dict:
+        """
+        在线备份数据库
+        
+        Args:
+            backup_dir: 备份目录
+            retention_days: 保留天数
+        
+        Returns:
+            {"backup_path": "...", "size": ..., "cleaned": count}
+        """
+        import sqlite3
+        from datetime import datetime
+        
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_name = f"backup_{timestamp}.db"
+        backup_path = os.path.join(backup_dir, backup_name)
+        
+        try:
+            with sqlite3.connect(self.db_path) as source:
+                with sqlite3.connect(backup_path) as dest:
+                    source.backup(dest)
+            
+            backup_size = os.path.getsize(backup_path)
+            logger.info(f"数据库已备份: {backup_path} ({backup_size} bytes)")
+            
+            cleaned = self._cleanup_old_backups(backup_dir, retention_days)
+            
+            return {
+                "backup_path": backup_path,
+                "size": backup_size,
+                "cleaned": cleaned
+            }
+        except Exception as e:
+            logger.error(f"数据库备份失败: {e}")
+            return {"error": str(e)}
+    
+    def _cleanup_old_backups(self, backup_dir: str, retention_days: int) -> int:
+        """清理超过保留天数的旧备份"""
+        import glob
+        
+        count = 0
+        pattern = os.path.join(backup_dir, "backup_*.db")
+        
+        for backup_file in glob.glob(pattern):
+            try:
+                mtime = os.path.getmtime(backup_file)
+                age_days = (time.time() - mtime) / 86400
+                
+                if age_days > retention_days:
+                    os.remove(backup_file)
+                    count += 1
+                    logger.info(f"已删除旧备份: {backup_file}")
+            except Exception as e:
+                logger.warning(f"删除备份失败: {backup_file}, {e}")
+        
+        return count
     
     # ==================== 发布记录操作 ====================
     

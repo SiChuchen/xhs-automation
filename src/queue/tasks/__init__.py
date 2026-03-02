@@ -626,3 +626,35 @@ class TaskScheduler:
     def schedule_cleanup(interval_hours: int = 24):
         """调度清理任务"""
         cleanup_task.schedule(args=[30])
+
+
+@huey.periodic_task(crontab(hour=4, minute=0))
+def db_backup_task() -> Dict[str, Any]:
+    """
+    数据库备份任务 - 每天凌晨 4 点执行
+    
+    1. 在线备份 SQLite 数据库
+    2. 清理超过 7 天的旧备份
+    """
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
+    
+    from src.database import get_database
+    
+    logger.info("开始数据库备份任务")
+    
+    try:
+        db = get_database()
+        result = db.backup_database(backup_dir="data/backups", retention_days=7)
+        
+        if "error" in result:
+            logger.error(f"数据库备份失败: {result['error']}")
+            return {"status": "failure", "error": result["error"]}
+        
+        logger.info(f"数据库备份完成: {result['backup_path']}, 清理旧备份: {result['cleaned']} 个")
+        return {"status": "success", **result}
+    
+    except Exception as e:
+        logger.error(f"数据库备份任务异常: {e}")
+        return {"status": "error", "error": str(e)}
