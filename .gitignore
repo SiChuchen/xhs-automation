@@ -41,3 +41,7 @@ test_*.py
 __pycache__/
 venv/
 .env
+
+# Docs to exclude
+PROJECT_PLAN.md
+TEMPLATE_README.md
