@@ -152,6 +152,22 @@ class XHSDatabase:
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_interactions_post ON interactions(target_post_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_interactions_keyword ON interactions(target_keyword)")
             
+            # 死信队列表 (DLQ)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS failed_tasks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_name TEXT NOT NULL,
+                    payload TEXT,
+                    error_message TEXT,
+                    traceback TEXT,
+                    failed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    retried_count INTEGER DEFAULT 0,
+                    resolved INTEGER DEFAULT 0
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_failed_tasks_failed_at ON failed_tasks(failed_at)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_failed_tasks_resolved ON failed_tasks(resolved)")
+            
             logger.info("数据库初始化完成")
     
     def _run_migrations(self):
@@ -541,6 +557,111 @@ class XHSDatabase:
         with self._get_connection() as conn:
             conn.execute("VACUUM")
             logger.info("数据库整理完成")
+    
+    # ==================== 死信队列 (DLQ) ====================
+    
+    def add_failed_task(
+        self,
+        task_name: str,
+        payload: str,
+        error_message: str,
+        traceback: str = "",
+        retried_count: int = 0
+    ) -> int:
+        """
+        添加失败任务到死信队列
+        
+        Args:
+            task_name: 任务名称
+            payload: 任务参数(JSON字符串)
+            error_message: 错误信息
+            traceback: 堆栈跟踪
+            retried_count: 重试次数
+        
+        Returns:
+            插入的任务ID
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO failed_tasks 
+                (task_name, payload, error_message, traceback, retried_count, failed_at)
+                VALUES (?, ?, ?, ?, ?, datetime('now'))
+            """, (task_name, payload, error_message, traceback, retried_count))
+            return cursor.lastrowid or 0
+    
+    def get_failed_tasks(
+        self,
+        hours: int = 24,
+        limit: int = 100,
+        unresolved_only: bool = True
+    ) -> List[Dict]:
+        """
+        获取失败任务
+        
+        Args:
+            hours: 过去几小时
+            limit: 返回数量限制
+            unresolved_only: 仅未解决
+        
+        Returns:
+            失败任务列表
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            query = "SELECT * FROM failed_tasks WHERE failed_at > datetime('now', '-{} hours')".format(hours)
+            
+            if unresolved_only:
+                query += " AND resolved = 0"
+            
+            query += " ORDER BY failed_at DESC LIMIT ?"
+            
+            cursor.execute(query, (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+    
+    def resolve_failed_task(self, task_id: int):
+        """标记任务为已解决"""
+        with self._get_connection() as conn:
+            conn.execute("UPDATE failed_tasks SET resolved = 1 WHERE id = ?", (task_id,))
+    
+    def get_failed_task_summary(self, hours: int = 24) -> Dict:
+        """
+        获取失败任务汇总
+        
+        Args:
+            hours: 过去几小时
+        
+        Returns:
+            汇总统计
+        """
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN resolved = 0 THEN 1 ELSE 0 END) as unresolved,
+                    task_name,
+                    COUNT(*) as count
+                FROM failed_tasks 
+                WHERE failed_at > datetime('now', '-{} hours')
+                GROUP BY task_name
+            """.format(hours))
+            
+            by_task = [dict(row) for row in cursor.fetchall()]
+            
+            cursor.execute("SELECT COUNT(*) FROM failed_tasks WHERE failed_at > datetime('now', '-{} hours')".format(hours))
+            total = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM failed_tasks WHERE resolved = 0 AND failed_at > datetime('now', '-{} hours')".format(hours))
+            unresolved = cursor.fetchone()[0]
+            
+            return {
+                "total": total,
+                "unresolved": unresolved,
+                "by_task": by_task
+            }
 
 
 # 全局数据库实例

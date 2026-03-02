@@ -658,3 +658,49 @@ def db_backup_task() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"数据库备份任务异常: {e}")
         return {"status": "error", "error": str(e)}
+
+
+@huey.periodic_task(crontab(hour=9, minute=0))
+def dlq_alert_task() -> Dict[str, Any]:
+    """
+    死信队列每日告警任务 - 每天早上 9 点执行
+    
+    检查过去 24 小时的失败任务，推送汇总告警到飞书
+    """
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
+    
+    from src.database import get_database
+    from src.integrations.feishu_client import send_message
+    
+    logger.info("开始死信队列告警任务")
+    
+    try:
+        db = get_database()
+        summary = db.get_failed_task_summary(hours=24)
+        
+        if summary["total"] == 0:
+            logger.info("过去 24 小时无失败任务")
+            return {"status": "success", "message": "no failed tasks"}
+        
+        task_lines = []
+        for item in summary["by_task"]:
+            task_lines.append(f"- {item['task_name']}: {item['count']} 次")
+        
+        message = f"""## 🔴 死信队列告警
+
+过去 24 小时共有 **{summary['total']}** 个任务失败，其中 **{summary['unresolved']}** 个未解决:
+
+{chr(10).join(task_lines)}
+
+请及时处理！"""
+        
+        send_message(message)
+        
+        logger.info(f"死信队列告警已发送: {summary['total']} 个失败任务")
+        return {"status": "success", "total": summary["total"], "unresolved": summary["unresolved"]}
+    
+    except Exception as e:
+        logger.error(f"死信队列告警任务异常: {e}")
+        return {"status": "error", "error": str(e)}
