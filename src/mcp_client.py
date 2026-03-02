@@ -6,6 +6,9 @@
 import requests
 import json
 import logging
+import time
+import subprocess
+import os
 from typing import List, Dict, Optional, Any
 
 logger = logging.getLogger(__name__)
@@ -258,6 +261,120 @@ class XHSMCPClient:
         """检查登录状态"""
         result = self.call_tool("check_login_status")
         return result.get("is_logged_in", False) if result else False
+    
+    def check_login_status_robust(self, max_retries: int = 3, delay: int = 2) -> Dict:
+        """多层检测登录状态，带重试机制
+        
+        检测流程:
+        1. 尝试 MCP 协议检查 (重试 max_retries 次)
+        2. 检测容器内 cookie 文件是否存在
+        3. 检测容器是否运行中
+        
+        Returns:
+            dict: {
+                'status': 'logged_in' | 'mcp_loading' | 'cookie_exists' | 'container_stopped' | 'error',
+                'message': str,
+                'method': str
+            }
+        """
+        # 步骤1: 尝试 MCP 协议检查
+        for attempt in range(max_retries):
+            try:
+                result = self.call_tool("check_login_status")
+                if result:
+                    # 解析 MCP 返回结果 (可能是 dict 或 包含 content 的结构)
+                    result_str = str(result)
+                    
+                    # 检查是否已登录
+                    is_logged_in = False
+                    username = None
+                    
+                    # 方式1: 检查 is_logged_in 字段
+                    if isinstance(result, dict):
+                        is_logged_in = result.get('is_logged_in', False)
+                        username = result.get('username')
+                    
+                    # 方式2: 解析文本内容
+                    if '已登录' in result_str:
+                        is_logged_in = True
+                        # 尝试从文本中提取用户名
+                        import re
+                        
+                        # 先尝试从嵌套结构中提取
+                        if isinstance(result, dict) and 'content' in result:
+                            for item in result.get('content', []):
+                                if item.get('type') == 'text':
+                                    text = item.get('text', '')
+                                    match = re.search(r'用户名[:：]\s*(\S+)', text)
+                                    if match:
+                                        username = match.group(1).strip()
+                                        break
+                        
+                        # 如果还没找到，直接从 result_str 提取
+                        if not username:
+                            match = re.search(r'用户名[:：]\s*(\S+)', result_str)
+                            if match:
+                                username = match.group(1).strip()
+                    
+                    if is_logged_in:
+                        return {
+                            'status': 'logged_in',
+                            'message': username or 'unknown',
+                            'method': 'mcp'
+                        }
+                    
+                    # MCP 返回未登录，但可能是初始化未完成
+                    if attempt < max_retries - 1:
+                        logger.info(f"MCP 检查未完成，{delay}秒后重试 ({attempt + 1}/{max_retries})")
+                        time.sleep(delay)
+                        continue
+            except Exception as e:
+                logger.warning(f"MCP 检查异常: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(delay)
+                    continue
+        
+        # 步骤2: 检测容器内 cookie 文件
+        cookie_paths = [
+            '/app/data/cookies.json',          # Docker 容器内路径
+            '/home/ubuntu/xhs-automation/docker/data/cookies.json',  # 宿主机路径
+        ]
+        
+        for cookie_path in cookie_paths:
+            if os.path.exists(cookie_path):
+                try:
+                    with open(cookie_path, 'r') as f:
+                        data = json.load(f)
+                        if data and len(data) > 0:
+                            return {
+                                'status': 'cookie_exists',
+                                'message': f'Cookie 文件存在但 MCP 尚未加载 ({cookie_path})',
+                                'method': 'file'
+                            }
+                except Exception:
+                    pass
+        
+        # 步骤3: 检测容器是否运行
+        try:
+            result = subprocess.run(
+                ['docker', 'ps', '--filter', 'name=xhs', '--format', '{{.Names}}'],
+                capture_output=True, text=True, timeout=5
+            )
+            if not result.stdout.strip():
+                return {
+                    'status': 'container_stopped',
+                    'message': 'MCP 容器未运行，请先启动容器',
+                    'method': 'docker'
+                }
+        except Exception as e:
+            logger.warning(f"检测容器状态失败: {e}")
+        
+        # 步骤4: 全部失败
+        return {
+            'status': 'error',
+            'message': '无法检测登录状态，请检查 MCP 服务',
+            'method': 'none'
+        }
     
     def list_available_tools(self) -> List[str]:
         """列出所有可用工具"""

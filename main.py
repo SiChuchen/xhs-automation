@@ -38,14 +38,28 @@ from src.auto_interact import AutoInteract
 def cmd_login_status(args):
     """检查登录状态"""
     client = get_mcp_client()
-    result = client.call_tool("check_login_status")
     
-    if result and result.get("is_logged_in"):
-        username = result.get("username", "unknown")
+    # 使用增强版登录检测
+    result = client.check_login_status_robust()
+    
+    status = result.get('status')
+    
+    if status == 'logged_in':
+        username = result.get('message', 'unknown')
         print(f"✅ 已登录: {username}")
         return 0
+    elif status == 'cookie_exists':
+        print(f"⏳ MCP 加载中...")
+        print(f"   {result.get('message')}")
+        print(f"   请稍等片刻后重试")
+        return 1
+    elif status == 'container_stopped':
+        print(f"❌ MCP 容器未运行")
+        print(f"   请先启动容器: docker start xhs-official")
+        return 1
     else:
-        print(f"❌ 未登录: 请使用 get_login_qrcode 获取二维码登录")
+        print(f"❌ 登录状态检测失败")
+        print(f"   {result.get('message')}")
         return 1
 
 
