@@ -263,6 +263,201 @@ class XHSMCPClient:
         """列出所有可用工具"""
         return list(self.available_tools.keys())
 
+    # ==================== 发布功能 ====================
+    
+    def publish_content(self, title: str, content: str, images: List[str],
+                       tags: Optional[List[str]] = None,
+                       schedule_at: Optional[str] = None,
+                       is_original: bool = False,
+                       visibility: str = "公开可见") -> Dict:
+        """发布图文内容
+        
+        Args:
+            title: 标题（最多20个字）
+            content: 正文内容（最多1000个字）
+            images: 图片路径列表（至少1张），支持本地路径或HTTP URL
+            tags: 话题标签列表
+            schedule_at: 定时发布时间（ISO8601格式，如 2024-01-20T10:30:00+08:00）
+            is_original: 是否声明原创
+            visibility: 可见范围（公开可见/仅自己可见/仅互关好友可见）
+        
+        Returns:
+            发布结果字典
+        """
+        params = {
+            "title": title,
+            "content": content,
+            "images": images
+        }
+        
+        if tags:
+            params["tags"] = tags
+        if schedule_at:
+            params["schedule_at"] = schedule_at
+        if is_original:
+            params["is_original"] = True
+        if visibility and visibility != "公开可见":
+            params["visibility"] = visibility
+        
+        result = self.call_tool("publish_content", params)
+        
+        if result:
+            return {
+                "success": True,
+                "title": result.get("title"),
+                "status": result.get("status"),
+                "images": result.get("images")
+            }
+        return {"success": False, "error": "发布失败"}
+    
+    def publish_video(self, title: str, content: str, video: str,
+                     tags: Optional[List[str]] = None,
+                     schedule_at: Optional[str] = None,
+                     visibility: str = "公开可见") -> Dict:
+        """发布视频内容
+        
+        Args:
+            title: 标题（最多20个字）
+            content: 正文内容
+            video: 本地视频文件绝对路径
+            tags: 话题标签列表
+            schedule_at: 定时发布时间
+            visibility: 可见范围
+        
+        Returns:
+            发布结果字典
+        """
+        params = {
+            "title": title,
+            "content": content,
+            "video": video
+        }
+        
+        if tags:
+            params["tags"] = tags
+        if schedule_at:
+            params["schedule_at"] = schedule_at
+        if visibility and visibility != "公开可见":
+            params["visibility"] = visibility
+        
+        result = self.call_tool("publish_with_video", params)
+        
+        if result:
+            return {
+                "success": True,
+                "title": result.get("title"),
+                "status": result.get("status"),
+                "video": result.get("video")
+            }
+        return {"success": False, "error": "发布失败"}
+
+    # ==================== 登录管理 ====================
+    
+    def get_login_qrcode(self) -> Dict:
+        """获取登录二维码
+        
+        Returns:
+            二维码信息字典，包含:
+            - timeout: 超时时间
+            - is_logged_in: 是否已登录
+            - img: 二维码 Base64 图片数据
+        """
+        result = self.call_tool("get_login_qrcode")
+        return result if result else {}
+    
+    def delete_cookies(self) -> Dict:
+        """删除 cookies，重置登录状态
+        
+        Returns:
+            操作结果字典
+        """
+        result = self.call_tool("delete_cookies")
+        if result:
+            return {
+                "success": True,
+                "message": result.get("message", "Cookies已删除")
+            }
+        return {"success": False, "error": "删除失败"}
+
+    # ==================== 互动功能 ====================
+    
+    def reply_comment(self, feed_id: str, xsec_token: str, content: str,
+                     comment_id: Optional[str] = None,
+                     user_id: Optional[str] = None) -> Dict:
+        """回复评论
+        
+        Args:
+            feed_id: 帖子ID
+            xsec_token: 安全令牌
+            content: 回复内容
+            comment_id: 目标评论ID（与 user_id 二选一）
+            user_id: 目标评论用户ID（与 comment_id 二选一）
+        
+        Returns:
+            回复结果字典
+        """
+        params = {
+            "feed_id": feed_id,
+            "xsec_token": xsec_token,
+            "content": content
+        }
+        
+        if comment_id:
+            params["comment_id"] = comment_id
+        if user_id:
+            params["user_id"] = user_id
+        
+        result = self.call_tool("reply_comment_in_feed", params)
+        
+        if result:
+            return {
+                "success": True,
+                "feed_id": result.get("feed_id"),
+                "target_comment_id": result.get("target_comment_id"),
+                "target_user_id": result.get("target_user_id")
+            }
+        return {"success": False, "error": "回复失败"}
+    
+    def unlike_feed(self, feed_id: str, xsec_token: str) -> Dict:
+        """取消点赞
+        
+        Args:
+            feed_id: 帖子ID
+            xsec_token: 安全令牌
+        
+        Returns:
+            操作结果字典
+        """
+        result = self.call_tool("like_feed", {
+            "feed_id": feed_id,
+            "xsec_token": xsec_token,
+            "unlike": True
+        })
+        
+        if result:
+            return {"success": True, "feed_id": result.get("feed_id")}
+        return {"success": False, "error": "取消点赞失败"}
+    
+    def unfavorite_feed(self, feed_id: str, xsec_token: str) -> Dict:
+        """取消收藏
+        
+        Args:
+            feed_id: 帖子ID
+            xsec_token: 安全令牌
+        
+        Returns:
+            操作结果字典
+        """
+        result = self.call_tool("favorite_feed", {
+            "feed_id": feed_id,
+            "xsec_token": xsec_token,
+            "unfavorite": True
+        })
+        
+        if result:
+            return {"success": True, "feed_id": result.get("feed_id")}
+        return {"success": False, "error": "取消收藏失败"}
+
 
 _mcp_client: Optional[XHSMCPClient] = None
 

@@ -11,9 +11,8 @@ import json
 from typing import List, Dict, Optional
 from datetime import datetime
 
-from .xhs_api_client import XHSAPIClient, get_xhs_client
-from .mcp_client import XHSMCPClient, get_mcp_client
-from .database import XHSDatabase, get_database
+from .mcp_client import get_mcp_client
+from .database import get_database
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +42,7 @@ class AutoInteract:
         # 评论生成配置
         self.comment_llm_enabled = config.get('comment_llm_enabled', True)
         
-        # API客户端
-        self.xhs_client = get_xhs_client()
+        # API客户端 - 使用 MCP 协议
         self.mcp_client = get_mcp_client()
         self.db = get_database()
         

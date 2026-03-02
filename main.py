@@ -31,32 +31,32 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from src.database import get_database
-from src.xhs_api_client import get_xhs_client
 from src.mcp_client import get_mcp_client
 from src.auto_interact import AutoInteract
 
 
 def cmd_login_status(args):
     """检查登录状态"""
-    client = get_xhs_client()
-    is_logged_in, data = client.check_login_status()
+    client = get_mcp_client()
+    result = client.call_tool("check_login_status")
     
-    if is_logged_in:
-        print(f"✅ 已登录: {data.get('username', 'unknown')}")
+    if result and result.get("is_logged_in"):
+        username = result.get("username", "unknown")
+        print(f"✅ 已登录: {username}")
         return 0
     else:
-        print(f"❌ 未登录: {data.get('error', '未知错误')}")
+        print(f"❌ 未登录: 请使用 get_login_qrcode 获取二维码登录")
         return 1
 
 
 def cmd_publish(args):
     """发布笔记"""
-    client = get_xhs_client()
+    client = get_mcp_client()
     db = get_database()
     
     # 检查登录
-    is_logged_in, _ = client.check_login_status()
-    if not is_logged_in:
+    login_result = client.call_tool("check_login_status")
+    if not login_result or not login_result.get("is_logged_in"):
         print("❌ 未登录，请先扫码登录")
         return 1
     
@@ -77,7 +77,18 @@ def cmd_publish(args):
     
     # 发布
     print(f"📝 发布笔记: {title}")
-    result = client.publish_note(title, content, image_path, tags or [])
+    
+    # 处理图片路径
+    images = []
+    if image_path:
+        images = [image_path]
+    
+    result = client.publish_content(
+        title=title,
+        content=content,
+        images=images,
+        tags=tags
+    )
     
     if result.get('success'):
         post_id = result.get('post_id')
@@ -110,8 +121,7 @@ def cmd_publish(args):
 
 def cmd_search(args):
     """搜索内容"""
-    client = get_xhs_client()
-    mcp_client = get_mcp_client()
+    client = get_mcp_client()
     db = get_database()
     
     # 检查缓存
@@ -122,7 +132,7 @@ def cmd_search(args):
     else:
         # 执行搜索
         print(f"🔍 搜索: {args.keyword}")
-        results = mcp_client.search(args.keyword)
+        results = client.search(args.keyword)
         
         # 缓存结果
         if results:
