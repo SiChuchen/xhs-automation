@@ -28,7 +28,11 @@ class ConnectionPool:
     
     def _create_connection(self) -> sqlite3.Connection:
         """创建新连接"""
-        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        conn = sqlite3.connect(
+            self.db_path, 
+            timeout=30.0,
+            check_same_thread=False
+        )
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")

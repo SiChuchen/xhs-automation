@@ -37,8 +37,9 @@ class XHSMCPClient:
         try:
             response = self.session.post(
                 self.mcp_url, 
-                json=payload,
-                timeout=(5, 60)  # 5秒连接超时, 60秒读取超时
+                data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
+                headers={"Content-Type": "application/json; charset=utf-8"},
+                timeout=(5, 60)
             )
             response.raise_for_status()
             

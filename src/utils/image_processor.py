@@ -560,3 +560,60 @@ def process_and_verify_image(
     except Exception as e:
         logger.error(f"图片处理失败: {input_path}, error: {e}")
         return False, str(e)
+
+
+def process_image_in_subprocess(
+    input_path: str,
+    output_path: str,
+    target_size: Tuple[int, int] = (1080, 1440),
+    max_size_kb: int = 500
+) -> Tuple[bool, str]:
+    """
+    使用子进程处理图片 - 避免内存碎片化
+    
+    Args:
+        input_path: 输入路径
+        output_path: 输出路径
+        target_size: 目标尺寸
+        max_size_kb: 最大文件大小
+    
+    Returns:
+        (success, message)
+    """
+    import subprocess
+    import json
+    
+    script_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+        "scripts", "process_image_subprocess.py"
+    )
+    
+    params = {
+        "input_path": input_path,
+        "output_path": output_path,
+        "target_size": target_size,
+        "max_size_kb": max_size_kb
+    }
+    
+    try:
+        result = subprocess.run(
+            ["python3", script_path, json.dumps(params)],
+            capture_output=True,
+            timeout=60,
+            text=True
+        )
+        
+        if result.returncode != 0:
+            return False, f"subprocess error: {result.stderr}"
+        
+        output = json.loads(result.stdout)
+        
+        if output.get("success"):
+            return True, f"ok, size={output.get('size', 0)/1024:.1f}KB"
+        else:
+            return False, output.get("message", "unknown error")
+    
+    except subprocess.TimeoutExpired:
+        return False, "subprocess timeout"
+    except Exception as e:
+        return False, str(e)
