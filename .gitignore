@@ -36,3 +36,8 @@ images/*
 # Temp
 *.tmp
 *.bak
+test_*.py
+*.pyc
+__pycache__/
+venv/
+.env
