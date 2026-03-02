@@ -14,9 +14,10 @@ logger = logging.getLogger(__name__)
 
 class LLMParseError(Exception):
     """LLM 解析错误异常 - 用于触发 Huey 重试"""
-    def __init__(self, message: str, raw_content: str = ""):
+    def __init__(self, message: str, raw_content: str = "", parse_error: str = ""):
         super().__init__(message)
         self.raw_content = raw_content
+        self.parse_error = parse_error
 
 
 @dataclass
@@ -75,12 +76,12 @@ class LLMResponseParser:
         json_str = self._extract_json(cleaned)
         
         if not json_str:
-            raise LLMParseError("无法提取 JSON", content)
+            raise LLMParseError("无法提取 JSON", content, "no json found")
         
         try:
             data = json.loads(json_str)
         except json.JSONDecodeError as e:
-            raise LLMParseError(f"JSON 解析失败: {e}", content)
+            raise LLMParseError(f"JSON 解析失败: {e}", content, str(e))
         
         validated = self._validate_and_normalize(data)
         
@@ -111,7 +112,7 @@ class LLMResponseParser:
         
         for field in self.required_fields:
             if field not in data or not data[field]:
-                raise LLMParseError(f"缺少必需字段: {field}")
+                raise LLMParseError(f"缺少必需字段: {field}", str(data), f"missing field: {field}")
             result[field] = str(data[field]).strip()
         
         if 'title' in result:
@@ -123,6 +124,44 @@ class LLMResponseParser:
         result['tags'] = self._extract_tags(data)
         
         return result
+    
+    def build_retry_prompt(self, original_prompt: str, error: LLMParseError, retry_count: int = 1) -> str:
+        """
+        构建重试时的修正 prompt - 注入错误信息引导模型修正行为
+        
+        Args:
+            original_prompt: 原始 prompt
+            error: 解析错误
+            retry_count: 重试次数
+        
+        Returns:
+            注入修正指令的 prompt
+        """
+        if retry_count <= 0:
+            return original_prompt
+        
+        correction_instruction = self._get_correction_instruction(error, retry_count)
+        
+        if "{correction}" in original_prompt:
+            return original_prompt.replace("{correction}", correction_instruction)
+        
+        return f"{original_prompt}\n\n{correction_instruction}"
+    
+    def _get_correction_instruction(self, error: LLMParseError, retry_count: int) -> str:
+        """根据错误类型生成修正指令"""
+        base_instructions = [
+            "【重要】前一次输出格式错误，必须仅返回纯净 JSON 字符串，",
+            "严禁携带 ```json、``` 等任何 Markdown 包裹符号，",
+            "不要添加任何开场白（如'好的，以下是...'），直接输出 JSON。"
+        ]
+        
+        if retry_count >= 2:
+            base_instructions.extend([
+                f"错误详情: {error.parse_error}",
+                "请严格遵守 JSON 格式，确保可以被 json.loads() 解析。"
+            ])
+        
+        return "\n".join(base_instructions)
     
     def _normalize_title(self, title: str) -> str:
         """规范化标题"""

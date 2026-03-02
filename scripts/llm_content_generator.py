@@ -5,10 +5,30 @@ LLM 内容生成器 - 使用大语言模型生成更自然的小红书内容
 """
 
 import os
+import sys
 import json
 import logging
 from typing import Dict, List, Optional
 import requests
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from src.utils.llm_response_parser import (
+    LLMResponseParser, 
+    LLMParseError, 
+    get_llm_parser
+)
+
+logger = logging.getLogger(__name__)
+
+
+class RetryWithCorrection(Exception):
+    """需要使用修正后的 prompt 重试"""
+    def __init__(self, corrected_prompt: str, error_message: str):
+        super().__init__(error_message)
+        self.corrected_prompt = corrected_prompt
+        self.error_message = error_message
+
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,22 +67,35 @@ class LLMContentGenerator:
             logger.warning(f"{provider} API key 未配置，LLM 内容生成将不可用")
         else:
             logger.info(f"LLM 内容生成器初始化成功: {provider}/{self.model}")
-    
-    def _load_config(self, config_path: str) -> Dict:
-        """加载配置文件"""
-        if config_path is None:
-            config_path = os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                'config',
-                'publish_config.json'
-            )
         
+        self.parser = get_llm_parser()
+    
+    def parse_with_retry_correction(self, content: str, prompt: str, retry_count: int = 0) -> Dict:
+        """
+        使用解析器解析内容，支持重试时注入修正指令
+        
+        Args:
+            content: LLM 返回的内容
+            prompt: 原始 prompt
+            retry_count: 重试次数
+        
+        Returns:
+            解析后的 dict
+        """
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"加载配置文件失败: {e}")
-            return {}
+            result = self.parser.parse(content)
+            return {
+                "title": result.title,
+                "content": result.content,
+                "tags": result.tags,
+                "raw": content
+            }
+        except LLMParseError as e:
+            if retry_count > 0:
+                corrected_prompt = self.parser.build_retry_prompt(prompt, e, retry_count)
+                logger.warning(f"解析失败，注入修正指令进行重试 (retry={retry_count}): {e}")
+                raise RetryWithCorrection(corrected_prompt, str(e)) from e
+            raise
     
     def _build_prompt(self, module: str, topic: str, content_type: str = "正文") -> str:
         """构建 LLM prompt"""

@@ -3,11 +3,13 @@
 """
 
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
-from .huey_config import huey, EXPONENTIAL_BACKOFF, PRIORITY_NORMAL
+from ..huey_config import huey, EXPONENTIAL_BACKOFF, PRIORITY_NORMAL, slow_task
+from huey import crontab
 
 logger = logging.getLogger(__name__)
 
@@ -390,12 +392,14 @@ def cleanup_cache_files(cache_dir: str) -> Dict:
     return {"count": count, "size": freed_size}
 
 
-@huey.task(expires=3600, queue="normal")
+@huey.periodic_task(crontab(hour=3, minute=0))
 def db_maintenance_task() -> Dict[str, Any]:
     """
-    数据库维护任务 - 每周执行
+    数据库维护任务 - 每天凌晨 3 点执行
     
-    执行 VACUUM 整理数据库碎片
+    执行:
+    - VACUUM 整理数据库碎片
+    - PRAGMA wal_checkpoint(TRUNCATE) 清理 WAL 日志
     """
     from ..database import get_database
     
@@ -426,6 +430,155 @@ def db_maintenance_task() -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"数据库维护任务失败: {e}")
         return {"status": "failure", "error": str(e)}
+
+
+@slow_task(expires=7200)
+def poll_comfyui_task(
+    prompt_id: str,
+    workflow_type: str = "comfyui",
+    callback_task_id: int = None,
+    poll_interval: int = 60,
+    current_retry: int = 0,
+    max_retries: int = 10
+) -> Dict[str, Any]:
+    """
+    异步轮询 ComfyUI/RunningHub 任务状态
+    
+    任务链:
+    1. 提交生图任务，获取 prompt_id
+    2. 立即返回，释放 Worker
+    3. 调度 poll_comfyui_task 延迟 60s 执行
+    4. 检查状态:
+       - 未完成: 再次入队延迟 60s
+       - 完成: 触发下游图片处理
+       - 失败: 记录错误
+    
+    Args:
+        prompt_id: 任务ID
+        workflow_type: 工作流类型 (comfyui/runninghub)
+        callback_task_id: 回调任务ID
+        poll_interval: 轮询间隔(秒)
+        current_retry: 当前重试次数
+        max_retries: 最大重试次数
+    """
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
+    
+    from src.utils.comfyui_workflow import ComfyUIWorkflow, RunningHubWorkflow
+    
+    logger.info(f"轮询任务状态: prompt_id={prompt_id}, retry={current_retry}/{max_retries}")
+    
+    try:
+        if workflow_type == "runninghub":
+            workflow = RunningHubWorkflow()
+        else:
+            workflow = ComfyUIWorkflow()
+        
+        result = workflow.check_and_poll(
+            prompt_id=prompt_id,
+            callback_task_id=callback_task_id,
+            poll_interval=poll_interval,
+            current_retry=current_retry,
+            max_retries=max_retries
+        )
+        
+        if result["status"] == "completed":
+            logger.info(f"任务完成: {prompt_id}")
+            if callback_task_id:
+                logger.info(f"触发回调任务: {callback_task_id}")
+            return {"status": "completed", "result": result.get("result")}
+        
+        if result["status"] == "errored":
+            logger.error(f"任务失败: {prompt_id}, error: {result.get('error')}")
+            return {"status": "errored", "error": result.get("error")}
+        
+        if result.get("needs_reschedule"):
+            next_retry = result.get("retry_count", current_retry + 1)
+            logger.info(f"任务进行中，调度下一次轮询: {prompt_id}, next_retry={next_retry}")
+            
+            poll_comfyui_task.schedule(
+                args=(prompt_id,),
+                kwargs={
+                    "workflow_type": workflow_type,
+                    "callback_task_id": callback_task_id,
+                    "poll_interval": poll_interval,
+                    "current_retry": next_retry,
+                    "max_retries": max_retries
+                },
+                delay=poll_interval
+            )
+            return {"status": "rescheduled", "next_retry": next_retry}
+        
+        return {"status": "max_retries_exceeded", "prompt_id": prompt_id}
+    
+    except Exception as e:
+        logger.error(f"轮询任务异常: {e}")
+        return {"status": "error", "error": str(e)}
+
+
+@slow_task(expires=3600)
+def submit_and_poll_image_task(
+    workflow_params: Dict,
+    workflow_type: str = "comfyui",
+    image_callback_task_id: int = None,
+    poll_interval: int = 60,
+    max_retries: int = 10
+) -> Dict[str, Any]:
+    """
+    提交生图任务并调度轮询（两步任务链）
+    
+    Step 1: 提交任务，获取 prompt_id
+    Step 2: 调度 poll_comfyui_task 异步查询
+    
+    Args:
+        workflow_params: 工作流参数字典
+        workflow_type: 工作流类型
+        image_callback_task_id: 图片处理完成后的回调任务ID
+        poll_interval: 轮询间隔
+        max_retries: 最大轮询次数
+    """
+    import sys
+    import os
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))))
+    
+    from src.utils.comfyui_workflow import ComfyUIWorkflow, RunningHubWorkflow
+    
+    logger.info(f"提交生图任务: workflow_type={workflow_type}")
+    
+    try:
+        if workflow_type == "runninghub":
+            workflow = RunningHubWorkflow()
+        else:
+            workflow = ComfyUIWorkflow()
+        
+        result = workflow.execute_and_schedule_poll(
+            prompt=workflow_params,
+            callback_task_id=image_callback_task_id,
+            poll_interval=poll_interval,
+            max_retries=max_retries
+        )
+        
+        prompt_id = result["prompt_id"]
+        logger.info(f"生图任务已提交: {prompt_id}, 调度轮询")
+        
+        poll_comfyui_task.schedule(
+            args=(prompt_id,),
+            kwargs={
+                "workflow_type": workflow_type,
+                "callback_task_id": image_callback_task_id,
+                "poll_interval": poll_interval,
+                "current_retry": 0,
+                "max_retries": max_retries
+            },
+            delay=poll_interval
+        )
+        
+        return {"status": "submitted", "prompt_id": prompt_id}
+    
+    except Exception as e:
+        logger.error(f"提交生图任务失败: {e}")
+        return {"status": "error", "error": str(e)}
 
 
 def schedule_with_jitter(task_func, base_interval: int, jitter: int = 300):

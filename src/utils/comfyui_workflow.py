@@ -262,6 +262,9 @@ class ComfyUIWorkflow:
         try:
             self.download_image(node_id, temp_path, prompt_id)
             
+            if not self._verify_file_integrity(temp_path):
+                raise ValueError("文件完整性校验失败: 文件损坏或不完整")
+            
             if process:
                 success, msg = process_and_verify_image(
                     temp_path,
@@ -282,6 +285,34 @@ class ComfyUIWorkflow:
             if os.path.exists(temp_path):
                 os.remove(temp_path)
             return False, str(e)
+    
+    def _verify_file_integrity(self, file_path: str, min_size: int = 1024) -> bool:
+        """
+        验证文件完整性
+        
+        Args:
+            file_path: 文件路径
+            min_size: 最小文件大小(字节)
+        
+        Returns:
+            是否通过校验
+        """
+        if not os.path.exists(file_path):
+            return False
+        
+        file_size = os.path.getsize(file_path)
+        
+        if file_size < min_size:
+            logger.warning(f"文件过小: {file_size} bytes < {min_size} bytes")
+            return False
+        
+        try:
+            with Image.open(file_path) as img:
+                img.verify()
+            return True
+        except Exception as e:
+            logger.warning(f"图片校验失败: {e}")
+            return False
     
     def wait_for_completion(self, prompt_id: str = None, timeout: int = 300, interval: int = 2) -> bool:
         """等待工作流完成"""
@@ -305,6 +336,88 @@ class ComfyUIWorkflow:
         
         logger.warning(f"等待超时: {timeout}秒")
         return False
+    
+    def execute_and_schedule_poll(
+        self, 
+        prompt: Dict = None, 
+        callback_task_id: int = None,
+        poll_interval: int = 60,
+        max_retries: int = 10
+    ) -> Dict:
+        """
+        执行工作流并调度轮询任务（不阻塞）
+        
+        Args:
+            prompt: 工作流 prompt
+            callback_task_id: 回调任务ID（用于图片处理）
+            poll_interval: 轮询间隔（秒）
+            max_retries: 最大轮询次数
+        
+        Returns:
+            包含 prompt_id 和调度信息的 dict
+        """
+        prompt_id = self.execute(prompt)
+        
+        logger.info(f"工作流已提交: {prompt_id}, 调度轮询任务")
+        
+        return {
+            "prompt_id": prompt_id,
+            "callback_task_id": callback_task_id,
+            "poll_interval": poll_interval,
+            "max_retries": max_retries,
+            "status": "submitted"
+        }
+    
+    def check_and_poll(
+        self, 
+        prompt_id: str, 
+        callback_task_id: int = None,
+        poll_interval: int = 60,
+        current_retry: int = 0,
+        max_retries: int = 10
+    ) -> Dict:
+        """
+        检查任务状态并返回结果或调度下一次轮询
+        
+        Returns:
+            {
+                "status": "completed" | "pending" | "errored",
+                "needs_reschedule": True/False,
+                "result": {...}
+            }
+        """
+        history = self.get_history(prompt_id)
+        
+        if prompt_id not in history:
+            return {
+                "status": "not_found",
+                "needs_reschedule": current_retry < max_retries,
+                "retry_count": current_retry + 1
+            }
+        
+        status = history[prompt_id].get("status", {})
+        
+        if status.get("completed", False):
+            return {
+                "status": "completed",
+                "needs_reschedule": False,
+                "result": history[prompt_id],
+                "callback_task_id": callback_task_id
+            }
+        
+        if status.get("errored", False):
+            logger.error(f"工作流执行出错: {status.get('message')}")
+            return {
+                "status": "errored",
+                "needs_reschedule": False,
+                "error": status.get("message")
+            }
+        
+        return {
+            "status": "pending",
+            "needs_reschedule": current_retry < max_retries,
+            "retry_count": current_retry + 1
+        }
     
     def execute_and_wait(self, prompt: Dict = None, timeout: int = 300) -> Dict:
         """执行并等待完成"""
