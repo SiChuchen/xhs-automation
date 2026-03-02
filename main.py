@@ -30,6 +30,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+from src.database import get_database
+from src.xhs_api_client import get_xhs_client
+from src.mcp_client import get_mcp_client
+from src.auto_interact import AutoInteract
+
 
 def cmd_login_status(args):
     """检查登录状态"""
