@@ -45,3 +45,4 @@ venv/
 # Docs to exclude
 PROJECT_PLAN.md
 TEMPLATE_README.md
+.env
